@@ -8,12 +8,17 @@ import Admin from "./admin.jsx";
 import CustomerLogin from "./pages/CustomerLogin.jsx";
 import "./index.css";
 
+function StorefrontGate() {
+  const token = localStorage.getItem("freshmart-customer-token");
+  return token ? <App /> : <CustomerLogin />;
+}
+
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <CartProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<App />} />
+          <Route path="/" element={<StorefrontGate />} />
           <Route path="/login" element={<CustomerLogin />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/admin" element={<Admin />} />
