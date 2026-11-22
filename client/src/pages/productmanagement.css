@@ -1,0 +1,393 @@
+
+.product-management {
+  width: 100%;
+  min-width: 0;
+}
+
+.pm-heading,
+.pm-form-heading,
+.pm-table-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+
+.pm-heading {
+  margin-bottom: 25px;
+}
+
+.pm-heading h1 {
+  margin: 0 0 8px;
+  font-size: 27px;
+}
+
+.pm-heading p {
+  margin: 0;
+  color: #777;
+}
+
+.pm-add-button,
+.pm-save-button {
+  background: #174b35;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.pm-add-button:hover,
+.pm-save-button:hover {
+  background: #286347;
+}
+
+.pm-message,
+.pm-error {
+  padding: 13px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.pm-message {
+  background: #e4f5e9;
+  color: #17643a;
+}
+
+.pm-error {
+  background: #fde8e8;
+  color: #a52222;
+}
+
+.pm-form-section,
+.pm-table-section {
+  background: white;
+  border: 1px solid #edf0ed;
+  border-radius: 13px;
+  padding: 25px;
+  margin-bottom: 25px;
+  min-width: 0;
+}
+
+.pm-form-heading {
+  margin-bottom: 25px;
+}
+
+.pm-form-heading h2,
+.pm-table-heading h2 {
+  font-size: 19px;
+  margin: 0;
+}
+
+.pm-close-button {
+  border: none;
+  background: #f1f3f1;
+  width: 35px;
+  height: 35px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.pm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.pm-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #38443c;
+  min-width: 0;
+}
+
+.pm-form-grid input,
+.pm-form-grid select,
+.pm-form-grid textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #dce3dd;
+  border-radius: 7px;
+  padding: 12px;
+  font-size: 14px;
+  outline: none;
+  background: white;
+}
+
+.pm-form-grid input:focus,
+.pm-form-grid select:focus,
+.pm-form-grid textarea:focus {
+  border-color: #26734c;
+}
+
+.pm-full-width {
+  grid-column: 1 / -1;
+}
+
+.pm-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 25px;
+  margin-top: 22px;
+}
+
+.pm-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.pm-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 25px;
+}
+
+.pm-cancel-button,
+.pm-edit-button,
+.pm-delete-button {
+  border: none;
+  border-radius: 7px;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+
+.pm-cancel-button {
+  background: #edf0ed;
+  color: #333;
+}
+
+.pm-table-heading {
+  margin-bottom: 20px;
+}
+
+.pm-table-heading span {
+  color: #777;
+  font-size: 13px;
+}
+
+.pm-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.pm-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 750px;
+}
+
+.pm-table th,
+.pm-table td {
+  text-align: left;
+  padding: 15px 12px;
+  border-bottom: 1px solid #edf0ed;
+  font-size: 13px;
+}
+
+.pm-table th {
+  background: #f7f9f7;
+  color: #657168;
+  font-weight: bold;
+}
+
+.pm-product-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 180px;
+}
+
+.pm-product-info img {
+  width: 48px;
+  height: 48px;
+  border-radius: 7px;
+  object-fit: cover;
+  background: #f3f5f3;
+}
+
+.pm-product-info strong {
+  display: block;
+  font-size: 13px;
+}
+
+.pm-product-info small {
+  display: block;
+  color: #888;
+  margin-top: 5px;
+}
+
+.pm-status-active,
+.pm-status-inactive {
+  display: inline-block;
+  padding: 6px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.pm-status-active {
+  background: #e2f5e8;
+  color: #187343;
+}
+
+.pm-status-inactive {
+  background: #fde8e8;
+  color: #a52222;
+}
+
+.pm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.pm-edit-button {
+  background: #e6f0fa;
+  color: #205b91;
+}
+
+.pm-delete-button {
+  background: #fde8e8;
+  color: #b42b2b;
+}
+
+.pm-empty {
+  color: #777;
+  padding: 25px 0;
+  text-align: center;
+}
+
+/* Mobile cards are hidden on desktop */
+.pm-mobile-view {
+  display: none;
+}
+
+/* =================================
+   MOBILE PRODUCT LAYOUT
+================================= */
+
+@media (max-width: 650px) {
+  .pm-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pm-heading h1 {
+    font-size: 24px;
+  }
+
+  .pm-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pm-full-width {
+    grid-column: auto;
+  }
+
+  .pm-form-section,
+  .pm-table-section {
+    padding: 16px;
+  }
+
+  .pm-desktop-view {
+    display: none;
+  }
+
+  .pm-mobile-view {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+  }
+
+  .pm-mobile-card {
+    width: 100%;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid #e8eee9;
+    border-radius: 10px;
+    background: #fff;
+  }
+
+  .pm-mobile-product {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .pm-mobile-product img {
+    width: 65px;
+    height: 65px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #f3f5f3;
+  }
+
+  .pm-mobile-product > div {
+    min-width: 0;
+  }
+
+  .pm-mobile-product h3 {
+    margin: 0 0 5px;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+
+  .pm-mobile-product p {
+    margin: 0 0 7px;
+    color: #888;
+    font-size: 12px;
+  }
+
+  .pm-mobile-details {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 14px 0;
+    margin-top: 12px;
+    border-top: 1px solid #edf0ed;
+    border-bottom: 1px solid #edf0ed;
+  }
+
+  .pm-mobile-details div {
+    min-width: 0;
+  }
+
+  .pm-mobile-details span {
+    display: block;
+    color: #89948d;
+    font-size: 11px;
+    margin-bottom: 5px;
+  }
+
+  .pm-mobile-details strong {
+    display: block;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .pm-mobile-card .pm-actions {
+    margin-top: 12px;
+  }
+
+  .pm-mobile-card .pm-actions button {
+    flex: 1;
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 380px) {
+  .pm-mobile-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
