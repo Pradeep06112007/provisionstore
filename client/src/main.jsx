@@ -5,7 +5,7 @@ import { CartProvider } from "./cartcontext.jsx";
 import App from "./App.jsx";
 import Cart from "./cart.jsx";
 import Admin from "./admin.jsx";
-import CustomerLogin from "./pages/customerlogin.jsx";
+import CustomerLogin from "./pages/CustomerLogin.jsx";
 import "./index.css";
 
 createRoot(document.getElementById("root")).render(

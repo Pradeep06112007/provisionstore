@@ -49,7 +49,8 @@ export default function CustomerLogin() {
     try {
       setLoading(true);
 
-      const endpoint = mode === "login" ? `${AUTH_URL}/login` : `${AUTH_URL}/register`;
+      const endpoint =
+        mode === "login" ? `${AUTH_URL}/login` : `${AUTH_URL}/register`;
       const payload =
         mode === "login"
           ? { email: cleanEmail, password }
@@ -80,7 +81,10 @@ export default function CustomerLogin() {
         localStorage.setItem("freshmart-customer-token", data.token);
       }
       if (data.user) {
-        localStorage.setItem("freshmart-customer-user", JSON.stringify(data.user));
+        localStorage.setItem(
+          "freshmart-customer-user",
+          JSON.stringify(data.user)
+        );
       }
 
       setSuccessMsg(
@@ -120,7 +124,7 @@ export default function CustomerLogin() {
         </div>
 
         <div className="cust-brand-hero">
-          <span className="cust-brand-pill">Customer Account</span>
+          <span className="cust-brand-pill">CUSTOMER LOGIN</span>
           <h1>Daily essentials, delivered fresh to your door.</h1>
           <p>
             Sign in to shop faster, keep track of your groceries, and enjoy a
@@ -164,7 +168,9 @@ export default function CustomerLogin() {
           </div>
 
           <div className="cust-auth-header">
-            <h2>{mode === "login" ? "Welcome back" : "Create your account"}</h2>
+            <h2>
+              {mode === "login" ? "CUSTOMER LOGIN" : "CREATE CUSTOMER ACCOUNT"}
+            </h2>
             <p>
               {mode === "login"
                 ? "Enter your credentials to access your FreshMart account."
@@ -214,7 +220,9 @@ export default function CustomerLogin() {
                   }
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  autoComplete={
+                    mode === "login" ? "current-password" : "new-password"
+                  }
                   required
                 />
                 <button

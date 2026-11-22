@@ -171,9 +171,10 @@
 
 .cust-auth-header h2 {
   margin: 0 0 6px;
-  font-size: 1.55rem;
+  font-size: 1.5rem;
   font-weight: 800;
   color: #111827;
+  letter-spacing: 0.02em;
 }
 
 .cust-auth-header p {
