@@ -34,6 +34,15 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [customerUser, setCustomerUser] = useState(() => {
+    try {
+      const raw = localStorage.getItem("freshmart-customer-user");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
   // GET products from MongoDB
   useEffect(() => {
     const fetchProducts = async () => {
@@ -110,6 +119,12 @@ function App() {
     });
   };
 
+  const handleCustomerLogout = () => {
+    localStorage.removeItem("freshmart-customer-token");
+    localStorage.removeItem("freshmart-customer-user");
+    setCustomerUser(null);
+  };
+
   return (
     <div className="app">
 
@@ -159,6 +174,30 @@ function App() {
             </button>
           )}
         </div>
+
+        {customerUser ? (
+          <div className="customer-nav-actions" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+              Hi, {customerUser.name?.split(" ")[0] || "Customer"}
+            </span>
+            <button
+              type="button"
+              className="cart-button"
+              onClick={handleCustomerLogout}
+            >
+              Logout
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="cart-button"
+            onClick={() => navigate("/login")}
+          >
+            <span>👤</span>
+            <span>Sign In</span>
+          </button>
+        )}
 
         <button
           className="cart-button"
