@@ -9,6 +9,7 @@ import OrderManagement from "./pages/ordermanagement";
 import CustomerManagement from "./pages/customermanagement";
 import SalesReports from "./pages/salesreports";
 import Settings from "./pages/settings";
+import StockTracker from "./pages/stocktracker";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const API_URL = `${API_BASE}/api/auth`;
@@ -22,6 +23,7 @@ const VALID_PAGES = [
   "products",
   "orders",
   "inventory",
+  "stock-tracker",
   "customers",
   "sales",
   "settings",
@@ -68,7 +70,7 @@ function Admin() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
 
-  // Keep activePage synchronized with URL sub-paths like /admin/orders or /admin/sales
+  // Keep activePage synchronized with URL sub-paths like /admin/orders or /admin/stock-tracker
   useEffect(() => {
     const nextPage = pageFromPathname(location.pathname);
     setActivePage(nextPage);
@@ -288,6 +290,7 @@ function Admin() {
       products: "Product Management",
       orders: "Order Management",
       inventory: "Inventory Management",
+      "stock-tracker": "Stock & Product Tracker",
       customers: "Customer Management",
       sales: "Sales Reports",
       settings: "Settings",
@@ -435,6 +438,14 @@ function Admin() {
 
           <button
             type="button"
+            className={activePage === "stock-tracker" ? "active" : ""}
+            onClick={() => showPage("stock-tracker")}
+          >
+            🎯 Stock Tracker
+          </button>
+
+          <button
+            type="button"
             className={activePage === "customers" ? "active" : ""}
             onClick={() => showPage("customers")}
           >
@@ -543,6 +554,9 @@ function Admin() {
                   <button type="button" onClick={() => showPage("orders")}>
                     Manage Orders
                   </button>
+                  <button type="button" onClick={() => showPage("stock-tracker")}>
+                    Stock Tracker
+                  </button>
                 </div>
               </div>
 
@@ -556,6 +570,7 @@ function Admin() {
           {activePage === "products" && <ProductManagement />}
           {activePage === "orders" && <OrderManagement />}
           {activePage === "inventory" && <InventoryManagement />}
+          {activePage === "stock-tracker" && <StockTracker />}
           {activePage === "customers" && <CustomerManagement />}
           {activePage === "sales" && <SalesReports />}
           {activePage === "settings" && <Settings />}
