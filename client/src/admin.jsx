@@ -50,6 +50,10 @@ function Admin() {
     pageFromPathname(location.pathname)
   );
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth <= 768 : false
+  );
 
   const [stats, setStats] = useState({
     totalProducts: 0,
@@ -70,6 +74,18 @@ function Admin() {
   const [showPassword, setShowPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobileView(mobile);
+      if (!mobile) {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   // Close profile dropdown on outside click or Escape
   useEffect(() => {
@@ -100,6 +116,7 @@ function Admin() {
     const nextPage = pageFromPathname(location.pathname);
     setActivePage(nextPage);
     setProfileMenuOpen(false);
+    setMobileMenuOpen(false);
     if (location.pathname === "/admin/dashboard") {
       navigate("/admin", { replace: true });
     }
@@ -114,6 +131,7 @@ function Admin() {
       setPassword("");
       setActivePage("dashboard");
       setProfileMenuOpen(false);
+      setMobileMenuOpen(false);
       setStatsError("");
       if (message) {
         setLoginError(message);
@@ -309,6 +327,7 @@ function Admin() {
     const resolved = VALID_PAGES.includes(page) ? page : "dashboard";
     setActivePage(resolved);
     setProfileMenuOpen(false);
+    setMobileMenuOpen(false);
     navigate(resolved === "dashboard" ? "/admin" : `/admin/${resolved}`);
   };
 
@@ -420,86 +439,125 @@ function Admin() {
   // Admin dashboard
   return (
     <div className="admin-layout">
-      <aside className="admin-sidebar">
+      <aside className={`admin-sidebar ${mobileMenuOpen ? "open" : ""}`}>
         <div
-          className="admin-logo"
-          onClick={() => showPage("dashboard")}
-          style={{ cursor: "pointer" }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+          }}
         >
-          🛒 Fresh<span>Mart</span>
+          {isMobileView && (
+            <button
+              type="button"
+              className="admin-mobile-menu-btn"
+              aria-label="Toggle admin menu"
+              aria-expanded={mobileMenuOpen}
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              style={{
+                background: "rgba(255, 255, 255, 0.14)",
+                border: "1px solid rgba(255, 255, 255, 0.28)",
+                color: "#ffffff",
+                borderRadius: "8px",
+                width: "36px",
+                height: "36px",
+                fontSize: "1.2rem",
+                lineHeight: 1,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              {mobileMenuOpen ? "✕" : "☰"}
+            </button>
+          )}
+
+          <div
+            className="admin-logo"
+            onClick={() => showPage("dashboard")}
+            style={{ cursor: "pointer" }}
+          >
+            🛒 Fresh<span>Mart</span>
+          </div>
         </div>
 
-        <p className="admin-nav-title">MAIN MENU</p>
+        {(!isMobileView || mobileMenuOpen) && (
+          <>
+            <p className="admin-nav-title">MAIN MENU</p>
 
-        <nav className="admin-nav">
-          <button
-            type="button"
-            className={activePage === "dashboard" ? "active" : ""}
-            onClick={() => showPage("dashboard")}
-          >
-            📊 Dashboard
-          </button>
+            <nav className="admin-nav">
+              <button
+                type="button"
+                className={activePage === "dashboard" ? "active" : ""}
+                onClick={() => showPage("dashboard")}
+              >
+                📊 Dashboard
+              </button>
 
-          <button
-            type="button"
-            className={activePage === "products" ? "active" : ""}
-            onClick={() => showPage("products")}
-          >
-            📦 Products
-          </button>
+              <button
+                type="button"
+                className={activePage === "products" ? "active" : ""}
+                onClick={() => showPage("products")}
+              >
+                📦 Products
+              </button>
 
-          <button
-            type="button"
-            className={activePage === "orders" ? "active" : ""}
-            onClick={() => showPage("orders")}
-          >
-            📋 Orders
-          </button>
+              <button
+                type="button"
+                className={activePage === "orders" ? "active" : ""}
+                onClick={() => showPage("orders")}
+              >
+                📋 Orders
+              </button>
 
-          <button
-            type="button"
-            className={activePage === "inventory" ? "active" : ""}
-            onClick={() => showPage("inventory")}
-          >
-            📊 Inventory
-          </button>
+              <button
+                type="button"
+                className={activePage === "inventory" ? "active" : ""}
+                onClick={() => showPage("inventory")}
+              >
+                📊 Inventory
+              </button>
 
-          <button
-            type="button"
-            className={activePage === "stock-tracker" ? "active" : ""}
-            onClick={() => showPage("stock-tracker")}
-          >
-            🎯 Stock Tracker
-          </button>
+              <button
+                type="button"
+                className={activePage === "stock-tracker" ? "active" : ""}
+                onClick={() => showPage("stock-tracker")}
+              >
+                🎯 Stock Tracker
+              </button>
 
-          <button
-            type="button"
-            className={activePage === "customers" ? "active" : ""}
-            onClick={() => showPage("customers")}
-          >
-            👥 Customers
-          </button>
-        </nav>
+              <button
+                type="button"
+                className={activePage === "customers" ? "active" : ""}
+                onClick={() => showPage("customers")}
+              >
+                👥 Customers
+              </button>
+            </nav>
 
-        <p className="admin-nav-title">MANAGEMENT</p>
+            <p className="admin-nav-title">MANAGEMENT</p>
 
-        <nav className="admin-nav">
-          <button
-            type="button"
-            className={activePage === "sales" ? "active" : ""}
-            onClick={() => showPage("sales")}
-          >
-            💰 Sales Reports
-          </button>
+            <nav className="admin-nav">
+              <button
+                type="button"
+                className={activePage === "sales" ? "active" : ""}
+                onClick={() => showPage("sales")}
+              >
+                💰 Sales Reports
+              </button>
 
-          <button
-            type="button"
-            className={activePage === "settings" ? "active" : ""}
-            onClick={() => showPage("settings")}
-          >
-            ⚙️ Settings
-          </button>
-        </nav>
+              <button
+                type="button"
+                className={activePage === "settings" ? "active" : ""}
+                onClick={() => showPage("settings")}
+              >
+                ⚙️ Settings
+              </button>
+            </nav>
+          </>
+        )}
       </aside>
 
       <main className="admin-main">
