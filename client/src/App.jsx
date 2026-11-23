@@ -472,7 +472,6 @@ function App() {
 }
 
 export default App;
-import { useCallback, useEffect, useRef, useState } from "react";
 
 function createCustomerQrCode() {
   return `FM-CUST-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Date.now()
