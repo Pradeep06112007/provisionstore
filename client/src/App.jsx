@@ -140,7 +140,7 @@ function App() {
           <span>📍</span>
           <div>
             <small>DELIVERING TO</small>
-            <strong>Your Location</strong>
+            <strong>Thalluru, AP</strong>
           </div>
         </div>
 
@@ -441,6 +441,29 @@ function App() {
       <footer className="footer">
         <h2>🛒 FreshMart</h2>
         <p>Your neighbourhood store, now online.</p>
+
+        <div className="footer-contact">
+          <p>
+            📍 Store / Service Area:{" "}
+            <a
+              href="https://www.google.com/maps?q=14.801237,79.941260"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Thalluru, Andhra Pradesh 524142 (14.801237, 79.941260)
+            </a>
+          </p>
+          <p>
+            📞 Phone: <a href="tel:+919063998638">+91 9063998638</a>
+          </p>
+          <p>
+            ✉️ Email:{" "}
+            <a href="mailto:pradeepkumaramirisetty@gmail.com">
+              pradeepkumaramirisetty@gmail.com
+            </a>
+          </p>
+        </div>
+
         <p>© 2026 FreshMart. All rights reserved.</p>
       </footer>
 
