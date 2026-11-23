@@ -8,7 +8,7 @@ const AUTH_URL = `${API_BASE}/api/auth`;
 
 export default function CustomerLogin() {
   const navigate = useNavigate();
-  const { isAuthenticated, loginCustomer } = useAuth();
+  const { loginCustomer } = useAuth();
 
   const [mode, setMode] = useState("login"); // "login" | "register"
   const [name, setName] = useState("");
@@ -101,25 +101,12 @@ export default function CustomerLogin() {
     <div className="cust-auth-page">
       <section className="cust-auth-brand">
         <div className="cust-brand-top">
-          <div
-            className="cust-brand-logo"
-            onClick={() => isAuthenticated && navigate("/")}
-          >
+          <div className="cust-brand-logo">
             <span>🛒</span>
             <div>
               Fresh<span className="accent">Mart</span>
             </div>
           </div>
-
-          {isAuthenticated && (
-            <button
-              type="button"
-              className="cust-back-store-btn"
-              onClick={() => navigate("/")}
-            >
-              ← Back to Store
-            </button>
-          )}
         </div>
 
         <div className="cust-brand-hero">
