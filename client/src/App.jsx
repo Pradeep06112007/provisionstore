@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "./authcontext.jsx";
 import { useCart } from "./cartcontext.jsx";
 import "./App.css";
 
@@ -20,6 +21,7 @@ const categories = [
 
 function App() {
   const navigate = useNavigate();
+  const { user: customerUser, logoutCustomer } = useAuth();
 
   const {
     cart,
@@ -33,15 +35,6 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  const [customerUser, setCustomerUser] = useState(() => {
-    try {
-      const raw = localStorage.getItem("freshmart-customer-user");
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
 
   // GET products from MongoDB
   useEffect(() => {
@@ -120,9 +113,8 @@ function App() {
   };
 
   const handleCustomerLogout = () => {
-    localStorage.removeItem("freshmart-customer-token");
-    localStorage.removeItem("freshmart-customer-user");
-    setCustomerUser(null);
+    logoutCustomer();
+    navigate("/login", { replace: true });
   };
 
   return (

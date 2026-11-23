@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../authcontext.jsx";
 import "./CustomerLogin.css";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -7,6 +8,7 @@ const AUTH_URL = `${API_BASE}/api/auth`;
 
 export default function CustomerLogin() {
   const navigate = useNavigate();
+  const { isAuthenticated, loginCustomer } = useAuth();
 
   const [mode, setMode] = useState("login"); // "login" | "register"
   const [name, setName] = useState("");
@@ -77,25 +79,17 @@ export default function CustomerLogin() {
         );
       }
 
-      if (data.token) {
-        localStorage.setItem("freshmart-customer-token", data.token);
-      }
-      if (data.user) {
-        localStorage.setItem(
-          "freshmart-customer-user",
-          JSON.stringify(data.user)
-        );
-      }
+      loginCustomer(data.token, data.user);
 
       setSuccessMsg(
         mode === "login"
-          ? "Welcome back! Redirecting to FreshMart..."
-          : "Account created successfully! Redirecting to FreshMart..."
+          ? "Welcome back! Opening FreshMart..."
+          : "Account created successfully! Opening FreshMart..."
       );
 
       setTimeout(() => {
-        navigate("/");
-      }, 700);
+        navigate("/", { replace: true });
+      }, 400);
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
@@ -107,20 +101,25 @@ export default function CustomerLogin() {
     <div className="cust-auth-page">
       <section className="cust-auth-brand">
         <div className="cust-brand-top">
-          <div className="cust-brand-logo" onClick={() => navigate("/")}>
+          <div
+            className="cust-brand-logo"
+            onClick={() => isAuthenticated && navigate("/")}
+          >
             <span>🛒</span>
             <div>
               Fresh<span className="accent">Mart</span>
             </div>
           </div>
 
-          <button
-            type="button"
-            className="cust-back-store-btn"
-            onClick={() => navigate("/")}
-          >
-            ← Back to Store
-          </button>
+          {isAuthenticated && (
+            <button
+              type="button"
+              className="cust-back-store-btn"
+              onClick={() => navigate("/")}
+            >
+              ← Back to Store
+            </button>
+          )}
         </div>
 
         <div className="cust-brand-hero">
