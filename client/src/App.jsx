@@ -17,6 +17,10 @@ const CATEGORIES = [
   "Household",
 ];
 
+function getItemKey(item, fallbackIdx = 0) {
+  return String(item?._id || item?.id || item?.name || fallbackIdx);
+}
+
 function createCustomerQrCode() {
   return `FM-CUST-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Date.now()
     .toString(36)
@@ -316,7 +320,14 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchText, setSearchText] = useState("");
-  const [localCartCount, setLocalCartCount] = useState(0);
+  const [localCartItems, setLocalCartItems] = useState(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem("freshmart-cart") || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
 
   const customerName =
     authCtx?.user?.name ||
@@ -330,21 +341,14 @@ function App() {
       }
     })();
 
-  const syncLocalCartCount = useCallback(() => {
+  const persistLocalCart = useCallback((nextItems) => {
+    setLocalCartItems(nextItems);
     try {
-      const items = JSON.parse(localStorage.getItem("freshmart-cart") || "[]");
-      const count = Array.isArray(items)
-        ? items.reduce((sum, item) => sum + (Number(item.qty) || 1), 0)
-        : 0;
-      setLocalCartCount(count);
+      localStorage.setItem("freshmart-cart", JSON.stringify(nextItems));
     } catch {
-      setLocalCartCount(0);
+      // ignore storage errors
     }
   }, []);
-
-  useEffect(() => {
-    syncLocalCartCount();
-  }, [syncLocalCartCount]);
 
   useEffect(() => {
     let active = true;
@@ -395,16 +399,30 @@ function App() {
     );
   }, [products, selectedCategory]);
 
+  const activeCartList = useMemo(() => {
+    if (Array.isArray(cartCtx?.cart)) return cartCtx.cart;
+    if (Array.isArray(cartCtx?.items)) return cartCtx.items;
+    return localCartItems;
+  }, [cartCtx, localCartItems]);
+
   const cartBadgeCount = useMemo(() => {
     if (typeof cartCtx?.cartCount === "number") return cartCtx.cartCount;
-    if (Array.isArray(cartCtx?.cart)) {
-      return cartCtx.cart.reduce(
-        (sum, item) => sum + (Number(item.qty || item.quantity) || 1),
-        0
+    return activeCartList.reduce(
+      (sum, item) => sum + (Number(item.qty || item.quantity) || 1),
+      0
+    );
+  }, [cartCtx, activeCartList]);
+
+  const getProductQty = useCallback(
+    (item, idx = 0) => {
+      const targetKey = getItemKey(item, idx);
+      const found = activeCartList.find(
+        (c, cIdx) => getItemKey(c, cIdx) === targetKey
       );
-    }
-    return localCartCount;
-  }, [cartCtx, localCartCount]);
+      return found ? Number(found.qty || found.quantity) || 1 : 0;
+    },
+    [activeCartList]
+  );
 
   const handleHeaderSearchSubmit = (e) => {
     e.preventDefault();
@@ -412,24 +430,44 @@ function App() {
     navigate(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
   };
 
-  const handleAddToCart = (item) => {
+  const handleAddToCart = (item, idx = 0) => {
     if (cartCtx && typeof cartCtx.addToCart === "function") {
       cartCtx.addToCart(item);
       return;
     }
-    try {
-      const current = JSON.parse(localStorage.getItem("freshmart-cart") || "[]");
-      const id = item._id || item.id || item.name;
-      const idx = current.findIndex((x) => (x._id || x.id || x.name) === id);
-      if (idx >= 0) {
-        current[idx].qty = (current[idx].qty || 1) + 1;
+    const targetKey = getItemKey(item, idx);
+    const next = [...localCartItems];
+    const existingIdx = next.findIndex((c, cIdx) => getItemKey(c, cIdx) === targetKey);
+    if (existingIdx >= 0) {
+      const prevQty = Number(next[existingIdx].qty || next[existingIdx].quantity) || 1;
+      next[existingIdx] = { ...next[existingIdx], qty: prevQty + 1 };
+    } else {
+      next.push({ ...item, qty: 1 });
+    }
+    persistLocalCart(next);
+  };
+
+  const handleDecreaseQty = (item, idx = 0) => {
+    const targetKey = getItemKey(item, idx);
+    if (cartCtx && typeof cartCtx.decreaseQty === "function") {
+      cartCtx.decreaseQty(item);
+      return;
+    }
+    if (cartCtx && typeof cartCtx.updateQuantity === "function") {
+      const currentQty = getProductQty(item, idx);
+      cartCtx.updateQuantity(item, currentQty - 1);
+      return;
+    }
+    const next = [...localCartItems];
+    const existingIdx = next.findIndex((c, cIdx) => getItemKey(c, cIdx) === targetKey);
+    if (existingIdx >= 0) {
+      const prevQty = Number(next[existingIdx].qty || next[existingIdx].quantity) || 1;
+      if (prevQty <= 1) {
+        next.splice(existingIdx, 1);
       } else {
-        current.push({ ...item, qty: 1 });
+        next[existingIdx] = { ...next[existingIdx], qty: prevQty - 1 };
       }
-      localStorage.setItem("freshmart-cart", JSON.stringify(current));
-      syncLocalCartCount();
-    } catch {
-      // ignore storage errors
+      persistLocalCart(next);
     }
   };
 
@@ -724,10 +762,11 @@ function App() {
               }}
             >
               {filteredByCategory.map((item, idx) => {
-                const id = item._id || item.id || idx;
+                const id = getItemKey(item, idx);
                 const title = item.name || item.title || "Grocery Item";
                 const price = Number(item.price || 0);
                 const imageSrc = item.image || item.imageUrl || "";
+                const qty = getProductQty(item, idx);
 
                 return (
                   <div
@@ -795,22 +834,81 @@ function App() {
                       <span style={{ fontWeight: 700, color: "#0f172a" }}>
                         ₹{price}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handleAddToCart(item)}
-                        style={{
-                          padding: "7px 12px",
-                          borderRadius: "7px",
-                          border: "none",
-                          background: "#166534",
-                          color: "#ffffff",
-                          fontWeight: 600,
-                          fontSize: "0.85rem",
-                          cursor: "pointer",
-                        }}
-                      >
-                        + Add
-                      </button>
+
+                      {qty > 0 ? (
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            background: "#f0fdf4",
+                            border: "1px solid #166534",
+                            borderRadius: "7px",
+                            padding: "3px 8px",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            aria-label={`Decrease quantity of ${title}`}
+                            onClick={() => handleDecreaseQty(item, idx)}
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              color: "#166534",
+                              fontWeight: 700,
+                              fontSize: "1rem",
+                              cursor: "pointer",
+                              padding: "0 4px",
+                            }}
+                          >
+                            −
+                          </button>
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              fontSize: "0.9rem",
+                              color: "#0f172a",
+                              minWidth: "16px",
+                              textAlign: "center",
+                            }}
+                          >
+                            {qty}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Increase quantity of ${title}`}
+                            onClick={() => handleAddToCart(item, idx)}
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              color: "#166534",
+                              fontWeight: 700,
+                              fontSize: "1rem",
+                              cursor: "pointer",
+                              padding: "0 4px",
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleAddToCart(item, idx)}
+                          style={{
+                            padding: "7px 12px",
+                            borderRadius: "7px",
+                            border: "none",
+                            background: "#166534",
+                            color: "#ffffff",
+                            fontWeight: 600,
+                            fontSize: "0.85rem",
+                            cursor: "pointer",
+                          }}
+                        >
+                          + Add
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
