@@ -1,120 +1,208 @@
-
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 const CartContext = createContext(null);
+const CART_STORAGE_KEY = "freshmart-cart";
+
+function resolveProductKey(item) {
+  if (!item) return "";
+  if (typeof item === "string" || typeof item === "number") {
+    return String(item);
+  }
+  const raw =
+    item._id ??
+    item.id ??
+    item.productId ??
+    item.sku ??
+    item.name ??
+    item.title ??
+    "";
+  return String(raw).trim();
+}
+
+function normalizeCartList(list) {
+  if (!Array.isArray(list)) return [];
+  const merged = new Map();
+
+  for (const rawItem of list) {
+    if (!rawItem || typeof rawItem !== "object") continue;
+    const key = resolveProductKey(rawItem);
+    if (!key) continue;
+
+    const qty = Math.max(1, Number(rawItem.qty ?? rawItem.quantity ?? 1) || 1);
+    const existing = merged.get(key);
+    if (existing) {
+      merged.set(key, {
+        ...existing,
+        qty: existing.qty + qty,
+        quantity: existing.qty + qty,
+      });
+    } else {
+      merged.set(key, {
+        ...rawItem,
+        _id: rawItem._id ?? key,
+        id: rawItem.id ?? key,
+        qty,
+        quantity: qty,
+      });
+    }
+  }
+
+  return Array.from(merged.values());
+}
 
 export function CartProvider({ children }) {
   const [cart, setCart] = useState(() => {
     try {
-      const savedCart = localStorage.getItem("freshmart-cart");
-      return savedCart ? JSON.parse(savedCart) : [];
+      const saved = localStorage.getItem(CART_STORAGE_KEY);
+      return saved ? normalizeCartList(JSON.parse(saved)) : [];
     } catch {
       return [];
     }
   });
 
-  // Save cart whenever it changes
   useEffect(() => {
-    localStorage.setItem("freshmart-cart", JSON.stringify(cart));
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+    } catch {
+      // ignore storage quota errors
+    }
   }, [cart]);
 
-  // Add product
-  const addToCart = (product) => {
-    if (!product.isAvailable || product.stock <= 0) return;
+  const addToCart = useCallback((product) => {
+    const key = resolveProductKey(product);
+    if (!key) return;
 
-    setCart((previous) => {
-      const existing = previous.find(
-        (item) => item.id === product.id
-      );
-
-      if (existing) {
-        if (existing.quantity >= product.stock) {
-          return previous;
-        }
-
-        return previous.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
+    setCart((prev) => {
+      const index = prev.findIndex((item) => resolveProductKey(item) === key);
+      if (index >= 0) {
+        const next = [...prev];
+        const nextQty = (Number(next[index].qty ?? next[index].quantity) || 1) + 1;
+        next[index] = {
+          ...next[index],
+          qty: nextQty,
+          quantity: nextQty,
+        };
+        return next;
       }
 
-      return [...previous, { ...product, quantity: 1 }];
+      return [
+        ...prev,
+        {
+          ...product,
+          _id: product._id ?? key,
+          id: product.id ?? key,
+          qty: 1,
+          quantity: 1,
+        },
+      ];
     });
-  };
+  }, []);
 
-  // Increase or decrease quantity
-  const updateQuantity = (id, change) => {
-    setCart((previous) =>
-      previous
-        .map((item) => {
-          if (item.id !== id) return item;
+  const updateQuantity = useCallback((productOrId, newQty) => {
+    const key = resolveProductKey(productOrId);
+    if (!key) return;
+    const numericQty = Number(newQty) || 0;
 
-          const newQuantity = item.quantity + change;
+    setCart((prev) => {
+      if (numericQty <= 0) {
+        return prev.filter((item) => resolveProductKey(item) !== key);
+      }
+      return prev.map((item) =>
+        resolveProductKey(item) === key
+          ? { ...item, qty: numericQty, quantity: numericQty }
+          : item
+      );
+    });
+  }, []);
 
-          if (newQuantity > item.stock) return item;
+  const decreaseQty = useCallback((productOrId) => {
+    const key = resolveProductKey(productOrId);
+    if (!key) return;
 
-          return { ...item, quantity: newQuantity };
-        })
-        .filter((item) => item.quantity > 0)
-    );
-  };
+    setCart((prev) => {
+      const index = prev.findIndex((item) => resolveProductKey(item) === key);
+      if (index < 0) return prev;
+      const currentQty = Number(prev[index].qty ?? prev[index].quantity) || 1;
+      if (currentQty <= 1) {
+        return prev.filter((_, i) => i !== index);
+      }
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        qty: currentQty - 1,
+        quantity: currentQty - 1,
+      };
+      return next;
+    });
+  }, []);
 
-  // Remove product completely
-  const removeFromCart = (id) => {
-    setCart((previous) =>
-      previous.filter((item) => item.id !== id)
-    );
-  };
+  const removeFromCart = useCallback((productOrId) => {
+    const key = resolveProductKey(productOrId);
+    if (!key) return;
+    setCart((prev) => prev.filter((item) => resolveProductKey(item) !== key));
+  }, []);
 
-  // Clear cart after successful order
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setCart([]);
-  };
+    try {
+      localStorage.removeItem(CART_STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   const cartCount = useMemo(
-    () => cart.reduce((total, item) => total + item.quantity, 0),
-    [cart]
-  );
-
-  const cartTotal = useMemo(
     () =>
       cart.reduce(
-        (total, item) => total + item.price * item.quantity,
+        (sum, item) => sum + (Number(item.qty ?? item.quantity) || 1),
         0
       ),
     [cart]
   );
 
-  const value = {
-    cart,
-    addToCart,
-    updateQuantity,
-    removeFromCart,
-    clearCart,
-    cartCount,
-    cartTotal,
-  };
-
-  return (
-    <CartContext.Provider value={value}>
-      {children}
-    </CartContext.Provider>
+  const totalAmount = useMemo(
+    () =>
+      cart.reduce((sum, item) => {
+        const price = Number(item.price || 0);
+        const qty = Number(item.qty ?? item.quantity) || 1;
+        return sum + price * qty;
+      }, 0),
+    [cart]
   );
+
+  const value = useMemo(
+    () => ({
+      cart,
+      items: cart,
+      cartItems: cart,
+      cartCount,
+      totalItems: cartCount,
+      totalAmount,
+      addToCart,
+      incrementQty: addToCart,
+      decreaseQty,
+      decrementQty: decreaseQty,
+      updateQuantity,
+      updateQty: updateQuantity,
+      removeFromCart,
+      removeItem: removeFromCart,
+      clearCart,
+    }),
+    [
+      cart,
+      cartCount,
+      totalAmount,
+      addToCart,
+      decreaseQty,
+      updateQuantity,
+      removeFromCart,
+      clearCart,
+    ]
+  );
+
+  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
 
 export function useCart() {
-  const context = useContext(CartContext);
-
-  if (!context) {
-    throw new Error("useCart must be used inside CartProvider");
-  }
-
-  return context;
+  return useContext(CartContext);
 }
