@@ -5,16 +5,34 @@ import { useCart } from "../cartcontext.jsx";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const CART_STORAGE_KEY = "freshmart-cart";
 
-function getProductKey(item, fallbackId = "") {
-  return String(
+function matchProductId(item, fallbackId = "") {
+  const raw =
     item?._id ??
-      item?.id ??
-      item?.productId ??
-      fallbackId ??
-      item?.name ??
-      item?.title ??
-      ""
-  ).trim();
+    item?.id ??
+    item?.productId ??
+    fallbackId ??
+    item?.name ??
+    item?.title ??
+    "";
+  return String(raw).trim();
+}
+
+function readStoredCart() {
+  try {
+    const raw = localStorage.getItem(CART_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredCart(items) {
+  try {
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 function ProductDetails() {
@@ -25,22 +43,16 @@ function ProductDetails() {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [localCart, setLocalCart] = useState(() => {
-    try {
-      const saved = localStorage.getItem(CART_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [storedCart, setStoredCart] = useState(() => readStoredCart());
 
-  const syncLocalCart = useCallback((nextItems) => {
-    setLocalCart(nextItems);
-    try {
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(nextItems));
-    } catch {
-      // ignore storage errors
-    }
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (!e.key || e.key === CART_STORAGE_KEY) {
+        setStoredCart(readStoredCart());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   useEffect(() => {
@@ -48,7 +60,7 @@ function ProductDetails() {
     setLoading(true);
     setError("");
 
-    const findFromList = (list) => {
+    const findMatch = (list) => {
       if (!Array.isArray(list)) return null;
       return (
         list.find(
@@ -68,14 +80,14 @@ function ProductDetails() {
             return item;
           }
         }
-        const allRes = await fetch(`${API_BASE}/api/products`);
-        const allData = await allRes.json();
-        const list = Array.isArray(allData)
-          ? allData
-          : Array.isArray(allData?.products)
-          ? allData.products
+        const listRes = await fetch(`${API_BASE}/api/products`);
+        const listData = await listRes.json();
+        const list = Array.isArray(listData)
+          ? listData
+          : Array.isArray(listData?.products)
+          ? listData.products
           : [];
-        return findFromList(list);
+        return findMatch(list);
       })
       .then((found) => {
         if (!active) return;
@@ -86,7 +98,7 @@ function ProductDetails() {
             const cached = JSON.parse(
               localStorage.getItem("freshmart-products") || "[]"
             );
-            const fallback = findFromList(cached);
+            const fallback = findMatch(cached);
             if (fallback) {
               setProduct(fallback);
             } else {
@@ -103,7 +115,7 @@ function ProductDetails() {
           const cached = JSON.parse(
             localStorage.getItem("freshmart-products") || "[]"
           );
-          const fallback = findFromList(cached);
+          const fallback = findMatch(cached);
           if (fallback) {
             setProduct(fallback);
           } else {
@@ -122,100 +134,122 @@ function ProductDetails() {
     };
   }, [id]);
 
-  const activeCartList = useMemo(() => {
-    if (Array.isArray(cartCtx?.cart)) return cartCtx.cart;
-    if (Array.isArray(cartCtx?.items)) return cartCtx.items;
-    if (Array.isArray(cartCtx?.cartItems)) return cartCtx.cartItems;
-    return Array.isArray(localCart) ? localCart : [];
-  }, [cartCtx, localCart]);
+  const activeCart = useMemo(() => {
+    if (Array.isArray(cartCtx?.cart) && cartCtx.cart.length > 0) {
+      return cartCtx.cart;
+    }
+    if (Array.isArray(cartCtx?.items) && cartCtx.items.length > 0) {
+      return cartCtx.items;
+    }
+    return storedCart;
+  }, [cartCtx, storedCart]);
 
-  const cartBadgeCount = useMemo(() => {
+  const productKey = matchProductId(product, id);
+
+  const qtyInCart = useMemo(() => {
+    if (!productKey) return 0;
+    const found = activeCart.find(
+      (entry) => matchProductId(entry) === productKey
+    );
+    return found ? Math.max(0, Number(found.qty ?? found.quantity ?? 0) || 0) : 0;
+  }, [activeCart, productKey]);
+
+  const cartTotalBadge = useMemo(() => {
     if (typeof cartCtx?.cartCount === "number") return cartCtx.cartCount;
-    if (typeof cartCtx?.totalItems === "number") return cartCtx.totalItems;
-    return activeCartList.reduce(
-      (sum, item) => sum + (Number(item?.qty ?? item?.quantity) || 1),
+    return activeCart.reduce(
+      (sum, entry) => sum + (Number(entry?.qty ?? entry?.quantity) || 1),
       0
     );
-  }, [cartCtx, activeCartList]);
+  }, [cartCtx, activeCart]);
 
-  const targetKey = getProductKey(product, id);
+  const setExactQty = useCallback(
+    (nextQty) => {
+      if (!product || !productKey) return;
+      const clamped = Math.max(0, Number(nextQty) || 0);
 
-  const currentQty = useMemo(() => {
-    if (!targetKey) return 0;
-    const match = activeCartList.find(
-      (item, idx) => getProductKey(item, idx) === targetKey
-    );
-    return match ? Number(match.qty ?? match.quantity) || 1 : 0;
-  }, [activeCartList, targetKey]);
+      // Update localStorage cart immediately so UI & /cart stay in sync
+      const currentList = readStoredCart();
+      const idx = currentList.findIndex(
+        (entry) => matchProductId(entry) === productKey
+      );
+      let updatedList;
 
-  const handleAddOne = () => {
-    if (!product || !targetKey) return;
-    const normalizedProduct = {
-      ...product,
-      _id: product._id ?? targetKey,
-      id: product.id ?? targetKey,
-    };
+      if (clamped <= 0) {
+        updatedList = currentList.filter(
+          (entry) => matchProductId(entry) !== productKey
+        );
+      } else if (idx >= 0) {
+        updatedList = [...currentList];
+        updatedList[idx] = {
+          ...updatedList[idx],
+          qty: clamped,
+          quantity: clamped,
+        };
+      } else {
+        updatedList = [
+          ...currentList,
+          {
+            ...product,
+            _id: product._id ?? productKey,
+            id: product.id ?? productKey,
+            qty: clamped,
+            quantity: clamped,
+          },
+        ];
+      }
 
-    if (cartCtx && typeof cartCtx.addToCart === "function") {
-      cartCtx.addToCart(normalizedProduct);
-      return;
-    }
+      writeStoredCart(updatedList);
+      setStoredCart(updatedList);
 
-    const next = [...localCart];
-    const idx = next.findIndex(
-      (item, i) => getProductKey(item, i) === targetKey
-    );
-    if (idx >= 0) {
-      const nextQty = (Number(next[idx].qty ?? next[idx].quantity) || 1) + 1;
-      next[idx] = { ...next[idx], qty: nextQty, quantity: nextQty };
-    } else {
-      next.push({ ...normalizedProduct, qty: 1, quantity: 1 });
-    }
-    syncLocalCart(next);
+      // Also notify CartContext if available
+      if (clamped === 0) {
+        if (typeof cartCtx?.removeFromCart === "function") {
+          cartCtx.removeFromCart(productKey);
+        } else if (typeof cartCtx?.updateQuantity === "function") {
+          cartCtx.updateQuantity(productKey, 0);
+        }
+      } else if (clamped > qtyInCart) {
+        const diff = clamped - qtyInCart;
+        if (typeof cartCtx?.addToCart === "function") {
+          for (let i = 0; i < diff; i += 1) {
+            cartCtx.addToCart({
+              ...product,
+              _id: product._id ?? productKey,
+              id: product.id ?? productKey,
+            });
+          }
+        }
+      } else if (clamped < qtyInCart) {
+        if (typeof cartCtx?.updateQuantity === "function") {
+          cartCtx.updateQuantity(productKey, clamped);
+        } else if (typeof cartCtx?.decreaseQty === "function") {
+          const diff = qtyInCart - clamped;
+          for (let i = 0; i < diff; i += 1) {
+            cartCtx.decreaseQty(productKey);
+          }
+        }
+      }
+    },
+    [product, productKey, qtyInCart, cartCtx]
+  );
+
+  const handlePlus = () => {
+    setExactQty((qtyInCart || 0) + 1);
   };
 
-  const handleDecrement = () => {
-    if (!targetKey || currentQty <= 0) return;
-
-    if (currentQty <= 1) {
-      if (cartCtx && typeof cartCtx.removeFromCart === "function") {
-        cartCtx.removeFromCart(targetKey);
-      } else if (cartCtx && typeof cartCtx.updateQuantity === "function") {
-        cartCtx.updateQuantity(targetKey, 0);
-      } else if (cartCtx && typeof cartCtx.decreaseQty === "function") {
-        cartCtx.decreaseQty(targetKey);
-      } else {
-        const next = localCart.filter(
-          (item, i) => getProductKey(item, i) !== targetKey
-        );
-        syncLocalCart(next);
-      }
-      return;
+  const handleMinus = () => {
+    if (qtyInCart <= 1) {
+      setExactQty(0);
+    } else {
+      setExactQty(qtyInCart - 1);
     }
-
-    const nextQty = currentQty - 1;
-    if (cartCtx && typeof cartCtx.updateQuantity === "function") {
-      cartCtx.updateQuantity(targetKey, nextQty);
-      return;
-    }
-    if (cartCtx && typeof cartCtx.decreaseQty === "function") {
-      cartCtx.decreaseQty(targetKey);
-      return;
-    }
-
-    const next = localCart.map((item, i) =>
-      getProductKey(item, i) === targetKey
-        ? { ...item, qty: nextQty, quantity: nextQty }
-        : item
-    );
-    syncLocalCart(next);
   };
 
   const title = product?.name || product?.title || "Product";
   const price = Number(product?.price || 0);
   const mrp = Number(product?.mrp || product?.originalPrice || 0);
   const category = product?.category || "GROCERY";
-  const unit = product?.unit || product?.packSize || "1 kg";
+  const unit = product?.unit || product?.packSize || "1 unit";
   const description =
     product?.description || "Freshly stocked grocery item available at FreshMart.";
   const imageSrc = product?.image || product?.imageUrl || "";
@@ -225,7 +259,6 @@ function ProductDetails() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", color: "#0f172a" }}>
-      {/* Top Bar */}
       <header
         style={{
           background: "#ffffff",
@@ -298,13 +331,12 @@ function ProductDetails() {
                 fontWeight: 700,
               }}
             >
-              {cartBadgeCount}
+              {cartTotalBadge}
             </span>
           </button>
         </div>
       </header>
 
-      {/* Main Details Card */}
       <main style={{ maxWidth: "960px", margin: "28px auto", padding: "0 20px" }}>
         {loading ? (
           <div
@@ -362,10 +394,9 @@ function ProductDetails() {
               boxShadow: "0 10px 25px rgba(15, 23, 42, 0.06)",
             }}
           >
-            <div style={{ position: "relative" }}>
+            <div>
               <span
                 style={{
-                  position: "inline-block",
                   display: "inline-block",
                   background: "#dcfce7",
                   color: "#166534",
@@ -396,12 +427,16 @@ function ProductDetails() {
             <div>
               <div
                 style={{
-                  fontSize: "0.78rem",
+                  display: "inline-block",
+                  fontSize: "0.75rem",
                   fontWeight: 700,
-                  letterSpacing: "0.06em",
+                  letterSpacing: "0.05em",
                   color: "#166534",
+                  background: "#dcfce7",
+                  padding: "4px 10px",
+                  borderRadius: "999px",
                   textTransform: "uppercase",
-                  marginBottom: "6px",
+                  marginBottom: "8px",
                 }}
               >
                 {category}
@@ -489,7 +524,6 @@ function ProductDetails() {
                 </p>
               </div>
 
-              {/* Quantity Box & Add / Go to Cart Controls */}
               <div
                 style={{
                   display: "flex",
@@ -498,58 +532,58 @@ function ProductDetails() {
                   gap: "12px",
                 }}
               >
-                {currentQty > 0 ? (
+                {qtyInCart > 0 ? (
                   <div
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
-                      gap: "12px",
-                      border: "1.5px solid #166534",
-                      background: "#f0fdf4",
+                      border: "1px solid #16a34a",
                       borderRadius: "10px",
-                      padding: "8px 14px",
+                      overflow: "hidden",
+                      background: "#ffffff",
                     }}
                   >
                     <button
                       type="button"
                       aria-label="Decrease quantity"
-                      onClick={handleDecrement}
+                      onClick={handleMinus}
                       style={{
                         border: "none",
-                        background: "transparent",
-                        color: "#166534",
+                        background: "#f0fdf4",
+                        color: "#15803d",
                         fontWeight: 800,
-                        fontSize: "1.15rem",
+                        fontSize: "1.1rem",
+                        padding: "9px 14px",
                         cursor: "pointer",
-                        padding: "0 4px",
                       }}
                     >
                       −
                     </button>
                     <span
                       style={{
-                        fontWeight: 800,
+                        fontWeight: 700,
                         fontSize: "1rem",
-                        minWidth: "20px",
+                        minWidth: "36px",
                         textAlign: "center",
                         color: "#0f172a",
+                        padding: "0 6px",
                       }}
                     >
-                      {currentQty}
+                      {qtyInCart}
                     </span>
                     <button
                       type="button"
                       aria-label="Increase quantity"
                       disabled={isOutOfStock}
-                      onClick={handleAddOne}
+                      onClick={handlePlus}
                       style={{
                         border: "none",
-                        background: "transparent",
-                        color: "#166534",
+                        background: "#f0fdf4",
+                        color: "#15803d",
                         fontWeight: 800,
-                        fontSize: "1.15rem",
+                        fontSize: "1.1rem",
+                        padding: "9px 14px",
                         cursor: isOutOfStock ? "not-allowed" : "pointer",
-                        padding: "0 4px",
                       }}
                     >
                       +
@@ -559,7 +593,7 @@ function ProductDetails() {
                   <button
                     type="button"
                     disabled={isOutOfStock}
-                    onClick={handleAddOne}
+                    onClick={handlePlus}
                     style={{
                       padding: "11px 20px",
                       borderRadius: "10px",
@@ -579,7 +613,7 @@ function ProductDetails() {
                   type="button"
                   onClick={() => navigate("/cart")}
                   style={{
-                    padding: "11px 18px",
+                    padding: "10px 18px",
                     borderRadius: "10px",
                     border: "1px solid #cbd5e1",
                     background: "#ffffff",
@@ -589,7 +623,7 @@ function ProductDetails() {
                     cursor: "pointer",
                   }}
                 >
-                  Go to Cart ({cartBadgeCount})
+                  Go to Cart ({cartTotalBadge})
                 </button>
               </div>
             </div>
