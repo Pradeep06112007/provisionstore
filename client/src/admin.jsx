@@ -1,1072 +1,666 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import "./admin.css";
+import { useAuth } from "./authcontext.jsx";
+
+import ProductManagement from "./pages/productmanagement";
+import InventoryManagement from "./pages/inventorymanagement";
+import OrderManagement from "./pages/ordermanagement";
+import CustomerManagement from "./pages/customermanagement";
+import SalesReports from "./pages/salesreports";
+import Settings from "./pages/settings";
+import StockTracker from "./pages/stocktracker";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const API_URL = `${API_BASE}/api/auth`;
+const STATS_URL = `${API_BASE}/api/orders/stats`;
+const ADMIN_TOKEN_KEY = "freshmart-admin-token";
+const ADMIN_LAST_ACTIVE_KEY = "freshmart-admin-last-active";
+const ADMIN_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
-const NAV_GROUPS = [
-  {
-    section: "MAIN MENU",
-    items: [
-      { key: "dashboard", label: "Dashboard", icon: "📊", path: "/admin" },
-      { key: "products", label: "Products", icon: "📦", path: "/admin/products" },
-      { key: "orders", label: "Orders", icon: "📋", path: "/admin/orders" },
-      { key: "inventory", label: "Inventory", icon: "📈", path: "/admin/inventory" },
-      {
-        key: "stock-tracker",
-        label: "Stock Tracker",
-        icon: "🎯",
-        path: "/admin/stock-tracker",
-      },
-      { key: "customers", label: "Customers", icon: "👥", path: "/admin/customers" },
-    ],
-  },
-  {
-    section: "MANAGEMENT",
-    items: [
-      { key: "sales", label: "Sales Reports", icon: "💰", path: "/admin/sales" },
-      { key: "settings", label: "Settings", icon: "⚙️", path: "/admin/settings" },
-    ],
-  },
+const VALID_PAGES = [
+  "dashboard",
+  "products",
+  "orders",
+  "inventory",
+  "stock-tracker",
+  "customers",
+  "sales",
+  "settings",
 ];
 
-function resolveActiveTab(pathname) {
-  const clean = String(pathname || "/admin").replace(/\/+$/, "") || "/admin";
-  if (clean === "/admin") return "dashboard";
-  if (clean.startsWith("/admin/products")) return "products";
-  if (clean.startsWith("/admin/orders")) return "orders";
-  if (clean.startsWith("/admin/inventory")) return "inventory";
-  if (clean.startsWith("/admin/stock-tracker")) return "stock-tracker";
-  if (clean.startsWith("/admin/customers")) return "customers";
-  if (clean.startsWith("/admin/sales")) return "sales";
-  if (clean.startsWith("/admin/settings")) return "settings";
+function pageFromPathname(pathname) {
+  const clean = pathname.replace(/\/+$/, "");
+  if (clean === "/admin" || clean === "/admin/dashboard") {
+    return "dashboard";
+  }
+  const match = clean.match(/^\/admin\/([^/]+)/);
+  if (match && VALID_PAGES.includes(match[1])) {
+    return match[1];
+  }
   return "dashboard";
 }
 
-function readStoredJson(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-export default function Admin() {
+function Admin() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { logoutAdmin } = useAuth();
 
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth <= 768 : false
+  const [activePage, setActivePage] = useState(() =>
+    pageFromPathname(location.pathname)
   );
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
-  const [adminSession, setAdminSession] = useState(() => {
-    const token =
-      sessionStorage.getItem("freshmart-admin-token") ||
-      localStorage.getItem("freshmart-admin-token");
-    const lastActive = Number(
-      sessionStorage.getItem("freshmart-admin-last-active") ||
-        localStorage.getItem("freshmart-admin-last-active") ||
-        0
-    );
-    if (token && lastActive && Date.now() - lastActive > IDLE_TIMEOUT_MS) {
-      sessionStorage.removeItem("freshmart-admin-token");
-      localStorage.removeItem("freshmart-admin-token");
-      return null;
-    }
-    return token ? { token } : null;
+  const [stats, setStats] = useState({
+    totalProducts: 0,
+    totalOrders: 0,
+    totalCustomers: 0,
+    totalRevenue: 0,
   });
 
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState("");
+
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState("");
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
-  const [loggingIn, setLoggingIn] = useState(false);
 
-  const [products, setProducts] = useState(() =>
-    readStoredJson("freshmart-products", [])
-  );
-  const [orders, setOrders] = useState(() =>
-    readStoredJson("freshmart-orders", [])
-  );
-  const [customers, setCustomers] = useState(() =>
-    readStoredJson("freshmart-customers", [])
-  );
-
-  // Add Product form state
-  const [newName, setNewName] = useState("");
-  const [newCategory, setNewCategory] = useState("Rice & Dals");
-  const [newPrice, setNewPrice] = useState("");
-  const [newMrp, setNewMrp] = useState("");
-  const [newUnit, setNewUnit] = useState("1 kg");
-  const [newStock, setNewStock] = useState("25");
-  const [newImage, setNewImage] = useState("");
-  const [newDescription, setNewDescription] = useState("");
-  const [productStatusMsg, setProductStatusMsg] = useState("");
-
-  const activeTab = resolveActiveTab(location.pathname);
-
+  // Close profile dropdown on outside click or Escape
   useEffect(() => {
-    const handleResize = () => {
-      const mobile = window.innerWidth <= 768;
-      setIsMobile(mobile);
-      if (!mobile) {
-        setMobileMenuOpen(false);
+    if (!profileMenuOpen) return;
+
+    const handleDocClick = (event) => {
+      if (!event.target.closest(".admin-profile-wrapper")) {
+        setProfileMenuOpen(false);
       }
     };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [location.pathname]);
-
-  const handleLogout = useCallback(() => {
-    sessionStorage.removeItem("freshmart-admin-token");
-    sessionStorage.removeItem("freshmart-admin-last-active");
-    localStorage.removeItem("freshmart-admin-token");
-    localStorage.removeItem("freshmart-admin-last-active");
-    setAdminSession(null);
-    setMobileMenuOpen(false);
-  }, []);
-
-  // 30-minute idle auto-logout
-  useEffect(() => {
-    if (!adminSession) return;
-
-    const touchActivity = () => {
-      const now = String(Date.now());
-      sessionStorage.setItem("freshmart-admin-last-active", now);
-      localStorage.setItem("freshmart-admin-last-active", now);
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setProfileMenuOpen(false);
+      }
     };
 
-    touchActivity();
+    document.addEventListener("click", handleDocClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("click", handleDocClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [profileMenuOpen]);
 
-    const events = ["mousedown", "keydown", "scroll", "touchstart", "click"];
-    events.forEach((evt) => window.addEventListener(evt, touchActivity, { passive: true }));
+  // Keep activePage synchronized with URL sub-paths like /admin/orders or /admin/stock-tracker
+  useEffect(() => {
+    const nextPage = pageFromPathname(location.pathname);
+    setActivePage(nextPage);
+    setProfileMenuOpen(false);
+    if (location.pathname === "/admin/dashboard") {
+      navigate("/admin", { replace: true });
+    }
+  }, [location.pathname, navigate]);
 
-    const timer = window.setInterval(() => {
-      const lastActive = Number(
-        sessionStorage.getItem("freshmart-admin-last-active") ||
-          localStorage.getItem("freshmart-admin-last-active") ||
-          Date.now()
-      );
-      if (Date.now() - lastActive >= IDLE_TIMEOUT_MS) {
-        handleLogout();
+  const clearAdminSessionState = useCallback(
+    (message = "") => {
+      logoutAdmin();
+      setToken("");
+      setUser(null);
+      setEmail("");
+      setPassword("");
+      setActivePage("dashboard");
+      setProfileMenuOpen(false);
+      setStatsError("");
+      if (message) {
+        setLoginError(message);
       }
-    }, 15000);
+      if (location.pathname !== "/admin") {
+        navigate("/admin", { replace: true });
+      }
+    },
+    [logoutAdmin, location.pathname, navigate]
+  );
+
+  // Verify saved admin token and idle timeout when the page loads
+  useEffect(() => {
+    const verifyAdmin = async () => {
+      const savedToken = localStorage.getItem(ADMIN_TOKEN_KEY);
+
+      if (!savedToken) {
+        setCheckingAuth(false);
+        return;
+      }
+
+      const lastActive = Number(localStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || 0);
+      if (lastActive && Date.now() - lastActive > ADMIN_IDLE_TIMEOUT_MS) {
+        logoutAdmin();
+        setLoginError("Session expired due to inactivity. Please sign in again.");
+        setCheckingAuth(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/me`, {
+          headers: {
+            Authorization: `Bearer ${savedToken}`,
+          },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success || data.user?.role !== "admin") {
+          throw new Error("Admin session is invalid.");
+        }
+
+        localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(Date.now()));
+        setToken(savedToken);
+        setUser(data.user);
+      } catch (error) {
+        logoutAdmin();
+        setToken("");
+        setUser(null);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+
+    verifyAdmin();
+  }, [logoutAdmin]);
+
+  // Keep admin session alive on activity and expire after 30 minutes of inactivity
+  useEffect(() => {
+    if (!token || !user) return;
+
+    const handleActivity = () => {
+      const now = Date.now();
+      const lastActive = Number(localStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || now);
+
+      if (now - lastActive > ADMIN_IDLE_TIMEOUT_MS) {
+        clearAdminSessionState(
+          "Session expired due to 30 minutes of inactivity. Please sign in again."
+        );
+        return;
+      }
+
+      localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
+    };
+
+    localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(Date.now()));
+
+    const events = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
+    events.forEach((eventName) =>
+      window.addEventListener(eventName, handleActivity, { passive: true })
+    );
+
+    const intervalId = window.setInterval(handleActivity, 60 * 1000);
 
     return () => {
-      events.forEach((evt) => window.removeEventListener(evt, touchActivity));
-      window.clearInterval(timer);
+      events.forEach((eventName) =>
+        window.removeEventListener(eventName, handleActivity)
+      );
+      window.clearInterval(intervalId);
     };
-  }, [adminSession, handleLogout]);
+  }, [token, user, clearAdminSessionState]);
 
-  // Load products & orders from backend with localStorage fallback
-  useEffect(() => {
-    if (!adminSession) return;
+  // Admin login
+  const handleLogin = async (event) => {
+    event.preventDefault();
 
-    fetch(`${API_BASE}/api/products`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data) return;
-        const list = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.products)
-          ? data.products
-          : null;
-        if (list) {
-          setProducts(list);
-          try {
-            localStorage.setItem("freshmart-products", JSON.stringify(list));
-          } catch {
-            // ignore
-          }
-        }
-      })
-      .catch(() => {});
-
-    fetch(`${API_BASE}/api/orders`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        const backendOrders = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.orders)
-          ? data.orders
-          : [];
-        const localOrders = readStoredJson("freshmart-orders", []);
-        const combined = [...backendOrders, ...localOrders];
-        const seen = new Set();
-        const deduped = combined.filter((ord, i) => {
-          const id = String(ord?._id || ord?.orderId || ord?.id || i);
-          if (seen.has(id)) return false;
-          seen.add(id);
-          return true;
-        });
-        if (deduped.length > 0) {
-          setOrders(deduped);
-        }
-      })
-      .catch(() => {
-        setOrders(readStoredJson("freshmart-orders", []));
-      });
-
-    fetch(`${API_BASE}/api/customers`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        const list = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.customers)
-          ? data.customers
-          : [];
-        if (list.length > 0) {
-          setCustomers(list);
-        }
-      })
-      .catch(() => {});
-  }, [adminSession]);
-
-  const handleAdminLogin = async (e) => {
-    e.preventDefault();
-    setLoggingIn(true);
     setLoginError("");
+    setLoginLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/admin/login`, {
+      const response = await fetch(`${API_URL}/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          email: loginEmail.trim(),
-          password: loginPassword,
+          email: email.trim(),
+          password,
         }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && (data?.token || data?.success || data?.admin)) {
-        const token = data.token || "freshmart-admin-session";
-        const now = String(Date.now());
-        sessionStorage.setItem("freshmart-admin-token", token);
-        sessionStorage.setItem("freshmart-admin-last-active", now);
-        localStorage.setItem("freshmart-admin-token", token);
-        localStorage.setItem("freshmart-admin-last-active", now);
-        setAdminSession({ token, email: data?.admin?.email || loginEmail.trim() });
-      } else {
-        setLoginError(data?.message || "Invalid admin credentials.");
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Login failed.");
       }
-    } catch {
-      setLoginError("Unable to reach admin server.");
+
+      if (data.user?.role !== "admin") {
+        throw new Error(
+          "Access denied. This account is not an administrator."
+        );
+      }
+
+      if (!data.token) {
+        throw new Error("The server did not return an authentication token.");
+      }
+
+      localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+      localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(Date.now()));
+
+      const targetPage = pageFromPathname(location.pathname);
+      setToken(data.token);
+      setUser(data.user);
+      setPassword("");
+      setActivePage(targetPage);
+      navigate(targetPage === "dashboard" ? "/admin" : `/admin/${targetPage}`, {
+        replace: true,
+      });
+    } catch (error) {
+      setLoginError(error.message || "Unable to log in. Please try again.");
     } finally {
-      setLoggingIn(false);
+      setLoginLoading(false);
     }
   };
 
-  const handleAddProduct = async (e) => {
-    e.preventDefault();
-    if (!newName.trim() || !newPrice) return;
-    setProductStatusMsg("");
+  // Admin logout
+  const handleLogout = () => {
+    clearAdminSessionState("");
+    setLoginError("");
+  };
 
-    const payload = {
-      name: newName.trim(),
-      category: newCategory,
-      price: Number(newPrice) || 0,
-      mrp: Number(newMrp) || Number(newPrice) || 0,
-      unit: newUnit.trim() || "1 kg",
-      stock: Number(newStock) || 0,
-      image: newImage.trim(),
-      description: newDescription.trim() || "Fresh grocery item at FreshMart.",
+  // Fetch all dashboard statistics
+  useEffect(() => {
+    if (!token || activePage !== "dashboard") return;
+
+    const fetchDashboardStats = async () => {
+      setStatsLoading(true);
+      setStatsError("");
+
+      try {
+        const response = await fetch(STATS_URL, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(
+            data.message || "Unable to load dashboard statistics."
+          );
+        }
+
+        setStats({
+          totalProducts: data.stats?.totalProducts ?? 0,
+          totalOrders: data.stats?.totalOrders ?? 0,
+          totalCustomers: data.stats?.totalCustomers ?? 0,
+          totalRevenue: data.stats?.totalRevenue ?? 0,
+        });
+      } catch (error) {
+        console.error("Dashboard statistics error:", error);
+        setStatsError(error.message || "Failed to load statistics.");
+      } finally {
+        setStatsLoading(false);
+      }
     };
 
-    try {
-      const res = await fetch(`${API_BASE}/api/products`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const created = res.ok ? await res.json().catch(() => null) : null;
-      const savedItem = created?.product || created || { ...payload, _id: `prod-${Date.now()}` };
-      const nextProducts = [savedItem, ...products];
-      setProducts(nextProducts);
-      try {
-        localStorage.setItem("freshmart-products", JSON.stringify(nextProducts));
-      } catch {
-        // ignore
-      }
-      setNewName("");
-      setNewPrice("");
-      setNewMrp("");
-      setNewImage("");
-      setNewDescription("");
-      setProductStatusMsg(`Added "${savedItem.name}" to store catalog.`);
-    } catch {
-      const localItem = { ...payload, _id: `prod-${Date.now()}` };
-      const nextProducts = [localItem, ...products];
-      setProducts(nextProducts);
-      try {
-        localStorage.setItem("freshmart-products", JSON.stringify(nextProducts));
-      } catch {
-        // ignore
-      }
-      setProductStatusMsg(`Saved "${localItem.name}" locally.`);
-    }
+    fetchDashboardStats();
+  }, [token, activePage]);
+
+  const showPage = (page) => {
+    const resolved = VALID_PAGES.includes(page) ? page : "dashboard";
+    setActivePage(resolved);
+    setProfileMenuOpen(false);
+    navigate(resolved === "dashboard" ? "/admin" : `/admin/${resolved}`);
   };
 
-  const totalRevenue = useMemo(
-    () =>
-      orders.reduce((sum, ord) => {
-        const amt = Number(ord?.totalAmount ?? ord?.total ?? 0);
-        return sum + (Number.isFinite(amt) ? amt : 0);
-      }, 0),
-    [orders]
-  );
+  const getPageTitle = () => {
+    const titles = {
+      dashboard: "Admin Dashboard",
+      products: "Product Management",
+      orders: "Order Management",
+      inventory: "Inventory Management",
+      "stock-tracker": "Stock & Product Tracker",
+      customers: "Customer Management",
+      sales: "Sales Reports",
+      settings: "Settings",
+    };
 
-  const uniqueCustomerCount = useMemo(() => {
-    if (customers.length > 0) return customers.length;
-    const phonesOrNames = new Set(
-      orders
-        .map((o) => String(o?.customerPhone || o?.customerName || "").trim())
-        .filter(Boolean)
-    );
-    return phonesOrNames.size;
-  }, [customers, orders]);
+    return titles[activePage] || "Admin Dashboard";
+  };
 
-  if (!adminSession) {
+  // Loading screen while verifying saved token
+  if (checkingAuth) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#f1f5f9",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "20px",
-        }}
-      >
-        <form
-          onSubmit={handleAdminLogin}
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e2e8f0",
-            borderRadius: "14px",
-            padding: "28px",
-            maxWidth: "380px",
-            width: "100%",
-            boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          <h2 style={{ margin: "0 0 6px", color: "#14532d" }}>FreshMart Admin</h2>
-          <p style={{ margin: "0 0 18px", color: "#64748b", fontSize: "0.9rem" }}>
-            Sign in to manage products, orders, and stock.
-          </p>
-
-          {loginError && (
-            <div
-              role="alert"
-              style={{
-                background: "#fef2f2",
-                border: "1px solid #fecaca",
-                color: "#b91c1c",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                fontSize: "0.86rem",
-                marginBottom: "14px",
-              }}
-            >
-              {loginError}
-            </div>
-          )}
-
-          <div style={{ marginBottom: "12px" }}>
-            <label
-              htmlFor="admin-email"
-              style={{ display: "block", fontWeight: 600, fontSize: "0.86rem", marginBottom: "4px" }}
-            >
-              Admin Email
-            </label>
-            <input
-              id="admin-email"
-              type="email"
-              required
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "9px 12px",
-                borderRadius: "8px",
-                border: "1px solid #cbd5e1",
-                boxSizing: "border-box",
-              }}
-            />
-          </div>
-
-          <div style={{ marginBottom: "16px" }}>
-            <label
-              htmlFor="admin-password"
-              style={{ display: "block", fontWeight: 600, fontSize: "0.86rem", marginBottom: "4px" }}
-            >
-              Password
-            </label>
-            <input
-              id="admin-password"
-              type="password"
-              required
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "9px 12px",
-                borderRadius: "8px",
-                border: "1px solid #cbd5e1",
-                boxSizing: "border-box",
-              }}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loggingIn}
-            style={{
-              width: "100%",
-              padding: "10px 16px",
-              borderRadius: "8px",
-              border: "none",
-              background: "#166534",
-              color: "#ffffff",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            {loggingIn ? "Signing in..." : "Sign In"}
-          </button>
-        </form>
+      <div className="admin-auth-loading">
+        <div className="admin-loading-spinner"></div>
+        <p>Verifying administrator access...</p>
       </div>
     );
   }
 
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: isMobile ? "column" : "row",
-        background: "#f8fafc",
-        color: "#0f172a",
-      }}
-    >
-      {/* Left Sidebar on Desktop / Top Green Bar with Three-Line Toggle on Mobile */}
-      <aside
-        style={{
-          width: isMobile ? "100%" : "245px",
-          flexShrink: 0,
-          background: "#14532d",
-          color: "#ffffff",
-          padding: isMobile ? "12px 16px" : "22px 14px",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        {/* Top Row: Three Horizontal Lines on Mobile + Brand */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "10px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {isMobile && (
-              <button
-                type="button"
-                aria-label="Toggle admin menu"
-                aria-expanded={mobileMenuOpen}
-                onClick={() => setMobileMenuOpen((prev) => !prev)}
-                style={{
-                  width: "38px",
-                  height: "38px",
-                  borderRadius: "8px",
-                  border: "1px solid rgba(255, 255, 255, 0.3)",
-                  background: "rgba(255, 255, 255, 0.12)",
-                  color: "#ffffff",
-                  fontSize: "1.2rem",
-                  lineHeight: 1,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                }}
-              >
-                {mobileMenuOpen ? "✕" : "☰"}
-              </button>
-            )}
-
-            <Link
-              to="/admin"
-              onClick={() => setMobileMenuOpen(false)}
-              style={{
-                textDecoration: "none",
-                color: "#ffffff",
-                fontWeight: 800,
-                fontSize: "1.35rem",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <span>🛒</span>
-              <span>
-                Fresh<span style={{ color: "#facc15" }}>Mart</span>
-              </span>
-            </Link>
-          </div>
-
-          {isMobile && (
-            <button
-              type="button"
-              onClick={handleLogout}
-              style={{
-                padding: "6px 10px",
-                borderRadius: "7px",
-                border: "1px solid rgba(255,255,255,0.25)",
-                background: "transparent",
-                color: "#dcfce7",
-                fontSize: "0.78rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Logout
-            </button>
-          )}
+  // Login screen
+  if (!user || !token) {
+    return (
+      <div className="admin-login-page">
+        <div className="admin-login-brand">
+          <div className="admin-login-logo">🛒</div>
+          <h1>
+            Fresh<span>Mart</span>
+          </h1>
+          <p>ADMINISTRATION PORTAL</p>
         </div>
 
-        {/* Navigation Options: Always visible on desktop; hidden on mobile until ☰ is clicked */}
-        {(!isMobile || mobileMenuOpen) && (
-          <div style={{ marginTop: isMobile ? "14px" : "24px" }}>
-            {NAV_GROUPS.map((group) => (
-              <div key={group.section} style={{ marginBottom: "20px" }}>
-                <div
-                  style={{
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                    color: "#86efac",
-                    padding: "0 10px",
-                    marginBottom: "8px",
-                  }}
-                >
-                  {group.section}
-                </div>
+        <div className="admin-login-card">
+          <div className="admin-login-heading">
+            <span className="admin-login-tag">SECURE ACCESS</span>
+            <h2>Welcome back</h2>
+            <p>Sign in to manage your FreshMart store.</p>
+          </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  {group.items.map((item) => {
-                    const isActive = activeTab === item.key;
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => {
-                          navigate(item.path);
-                          setMobileMenuOpen(false);
-                        }}
-                        style={{
-                          width: "100%",
-                          textAlign: "left",
-                          padding: "10px 12px",
-                          borderRadius: "10px",
-                          border: "none",
-                          background: isActive
-                            ? "rgba(255, 255, 255, 0.16)"
-                            : "transparent",
-                          color: "#ffffff",
-                          fontWeight: isActive ? 700 : 500,
-                          fontSize: "0.94rem",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "10px",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <span>{item.icon}</span>
-                        <span>{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+          <form onSubmit={handleLogin}>
+            <label htmlFor="admin-email">Email address</label>
+            <input
+              id="admin-email"
+              type="email"
+              placeholder="Enter your admin email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="username"
+              required
+            />
+
+            <label htmlFor="admin-password">Password</label>
+            <div className="admin-password-wrapper">
+              <input
+                id="admin-password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+
+              <button
+                type="button"
+                className="admin-password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+
+            {loginError && (
+              <div className="admin-login-error" role="alert">
+                {loginError}
               </div>
-            ))}
+            )}
 
-            {!isMobile && (
+            <button
+              type="submit"
+              className="admin-login-submit"
+              disabled={loginLoading}
+            >
+              {loginLoading ? "Signing in..." : "Sign in to Dashboard"}
+            </button>
+          </form>
+
+          <div className="admin-login-footer">
+            <span>🔒</span>
+            Protected administrator access
+          </div>
+        </div>
+
+        <p className="admin-login-copyright">
+          © {new Date().getFullYear()} FreshMart. All rights reserved.
+        </p>
+      </div>
+    );
+  }
+
+  // Admin dashboard
+  return (
+    <div className="admin-layout">
+      <aside className="admin-sidebar">
+        <div
+          className="admin-logo"
+          onClick={() => showPage("dashboard")}
+          style={{ cursor: "pointer" }}
+        >
+          🛒 Fresh<span>Mart</span>
+        </div>
+
+        <p className="admin-nav-title">MAIN MENU</p>
+
+        <nav className="admin-nav">
+          <button
+            type="button"
+            className={activePage === "dashboard" ? "active" : ""}
+            onClick={() => showPage("dashboard")}
+          >
+            📊 Dashboard
+          </button>
+
+          <button
+            type="button"
+            className={activePage === "products" ? "active" : ""}
+            onClick={() => showPage("products")}
+          >
+            📦 Products
+          </button>
+
+          <button
+            type="button"
+            className={activePage === "orders" ? "active" : ""}
+            onClick={() => showPage("orders")}
+          >
+            📋 Orders
+          </button>
+
+          <button
+            type="button"
+            className={activePage === "inventory" ? "active" : ""}
+            onClick={() => showPage("inventory")}
+          >
+            📊 Inventory
+          </button>
+
+          <button
+            type="button"
+            className={activePage === "stock-tracker" ? "active" : ""}
+            onClick={() => showPage("stock-tracker")}
+          >
+            🎯 Stock Tracker
+          </button>
+
+          <button
+            type="button"
+            className={activePage === "customers" ? "active" : ""}
+            onClick={() => showPage("customers")}
+          >
+            👥 Customers
+          </button>
+        </nav>
+
+        <p className="admin-nav-title">MANAGEMENT</p>
+
+        <nav className="admin-nav">
+          <button
+            type="button"
+            className={activePage === "sales" ? "active" : ""}
+            onClick={() => showPage("sales")}
+          >
+            💰 Sales Reports
+          </button>
+
+          <button
+            type="button"
+            className={activePage === "settings" ? "active" : ""}
+            onClick={() => showPage("settings")}
+          >
+            ⚙️ Settings
+          </button>
+        </nav>
+      </aside>
+
+      <main className="admin-main">
+        <header className="admin-topbar">
+          <h3>{getPageTitle()}</h3>
+
+          <div
+            className="admin-profile-wrapper"
+            style={{ position: "relative" }}
+          >
+            <button
+              type="button"
+              className="admin-profile"
+              onClick={() => setProfileMenuOpen((prev) => !prev)}
+              aria-expanded={profileMenuOpen}
+              aria-haspopup="menu"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                padding: "4px 8px",
+                borderRadius: "8px",
+              }}
+            >
+              <div className="admin-avatar">
+                {user.name?.charAt(0).toUpperCase() || "A"}
+              </div>
+              <strong>{user.name || "FreshMart Admin"}</strong>
+            </button>
+
+            {profileMenuOpen && (
               <div
+                role="menu"
                 style={{
-                  marginTop: "24px",
-                  paddingTop: "14px",
-                  borderTop: "1px solid rgba(255,255,255,0.15)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
+                  position: "absolute",
+                  right: 0,
+                  top: "calc(100% + 6px)",
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  boxShadow: "0 10px 25px rgba(15, 23, 42, 0.12)",
+                  minWidth: "160px",
+                  padding: "6px",
+                  zIndex: 50,
                 }}
               >
-                <Link
-                  to="/"
-                  style={{
-                    color: "#bbf7d0",
-                    textDecoration: "none",
-                    fontSize: "0.86rem",
-                    padding: "4px 10px",
-                  }}
-                >
-                  ← View Customer Store
-                </Link>
                 <button
                   type="button"
+                  role="menuitem"
                   onClick={handleLogout}
                   style={{
+                    width: "100%",
                     textAlign: "left",
                     padding: "8px 12px",
-                    borderRadius: "8px",
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    background: "rgba(0,0,0,0.15)",
-                    color: "#ffffff",
+                    borderRadius: "7px",
+                    border: "none",
+                    background: "transparent",
+                    color: "#b91c1c",
                     fontWeight: 600,
-                    fontSize: "0.86rem",
+                    fontSize: "0.9rem",
                     cursor: "pointer",
                   }}
                 >
-                  Logout
+                  🚪 Logout
                 </button>
               </div>
             )}
           </div>
-        )}
-      </aside>
-
-      {/* Main Content Area */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Top White Subheader */}
-        <header
-          style={{
-            background: "#ffffff",
-            borderBottom: "1px solid #e2e8f0",
-            padding: "14px 24px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
-          }}
-        >
-          <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "#0f172a" }}>
-            Admin Dashboard
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span
-              style={{
-                width: "32px",
-                height: "32px",
-                borderRadius: "50%",
-                background: "#dcfce7",
-                color: "#166534",
-                fontWeight: 800,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              F
-            </span>
-            <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-              FreshMart Admin
-            </span>
-          </div>
         </header>
 
-        <main style={{ padding: "24px", maxWidth: "1140px" }}>
-          {activeTab === "dashboard" && (
+        <section className="admin-content">
+          {activePage === "dashboard" && (
             <>
-              <h1 style={{ margin: "0 0 6px", fontSize: "1.75rem" }}>
-                Dashboard Overview
-              </h1>
-              <p style={{ margin: "0 0 22px", color: "#64748b" }}>
-                Welcome back! Here&apos;s what&apos;s happening at FreshMart.
-              </p>
+              <div className="admin-welcome">
+                <h1>Dashboard Overview</h1>
+                <p>
+                  Welcome back! Here's what's happening at FreshMart.
+                </p>
+              </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-                  gap: "16px",
-                  marginBottom: "24px",
-                }}
-              >
-                <div
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "14px",
-                    padding: "20px",
-                  }}
-                >
-                  <div style={{ fontSize: "1.4rem", marginBottom: "8px" }}>📦</div>
-                  <div style={{ color: "#64748b", fontSize: "0.88rem" }}>
-                    Total Products
-                  </div>
-                  <div style={{ fontSize: "1.75rem", fontWeight: 800, marginTop: "4px" }}>
-                    {products.length}
-                  </div>
+              {statsError && (
+                <div className="admin-login-error" role="alert">
+                  {statsError}
+                </div>
+              )}
+
+              <div className="admin-stats">
+                <div className="admin-stat-card">
+                  <div className="admin-stat-icon">📦</div>
+                  <p>Total Products</p>
+                  <h2>
+                    {statsLoading ? "..." : stats.totalProducts}
+                  </h2>
                 </div>
 
-                <div
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "14px",
-                    padding: "20px",
-                  }}
-                >
-                  <div style={{ fontSize: "1.4rem", marginBottom: "8px" }}>📋</div>
-                  <div style={{ color: "#64748b", fontSize: "0.88rem" }}>
-                    Total Orders
-                  </div>
-                  <div style={{ fontSize: "1.75rem", fontWeight: 800, marginTop: "4px" }}>
-                    {orders.length}
-                  </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-icon">📋</div>
+                  <p>Total Orders</p>
+                  <h2>
+                    {statsLoading ? "..." : stats.totalOrders}
+                  </h2>
                 </div>
 
-                <div
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "14px",
-                    padding: "20px",
-                  }}
-                >
-                  <div style={{ fontSize: "1.4rem", marginBottom: "8px" }}>👥</div>
-                  <div style={{ color: "#64748b", fontSize: "0.88rem" }}>
-                    Total Customers
-                  </div>
-                  <div style={{ fontSize: "1.75rem", fontWeight: 800, marginTop: "4px" }}>
-                    {uniqueCustomerCount}
-                  </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-icon">👥</div>
+                  <p>Total Customers</p>
+                  <h2>
+                    {statsLoading ? "..." : stats.totalCustomers}
+                  </h2>
                 </div>
 
-                <div
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "14px",
-                    padding: "20px",
-                  }}
-                >
-                  <div style={{ fontSize: "1.4rem", marginBottom: "8px" }}>💰</div>
-                  <div style={{ color: "#64748b", fontSize: "0.88rem" }}>
-                    Total Revenue
-                  </div>
-                  <div style={{ fontSize: "1.75rem", fontWeight: 800, marginTop: "4px" }}>
-                    ₹{totalRevenue}
-                  </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-icon">💰</div>
+                  <p>Total Revenue</p>
+                  <h2>
+                    {statsLoading
+                      ? "..."
+                      : `₹${Number(stats.totalRevenue).toLocaleString("en-IN")}`}
+                  </h2>
                 </div>
               </div>
 
-              <div
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "14px",
-                  padding: "20px",
-                }}
-              >
-                <h2 style={{ margin: "0 0 14px", fontSize: "1.15rem" }}>
-                  Quick Actions
-                </h2>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                    gap: "12px",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => navigate("/admin/products")}
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: "10px",
-                      border: "none",
-                      background: "#14532d",
-                      color: "#ffffff",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
+              <div className="admin-panel">
+                <h2>Quick Actions</h2>
+                <div className="admin-shortcuts">
+                  <button type="button" onClick={() => showPage("products")}>
                     + Add Product
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate("/admin/products")}
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: "10px",
-                      border: "none",
-                      background: "#14532d",
-                      color: "#ffffff",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
+                  <button type="button" onClick={() => showPage("products")}>
                     View Products
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate("/admin/orders")}
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: "10px",
-                      border: "none",
-                      background: "#14532d",
-                      color: "#ffffff",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
+                  <button type="button" onClick={() => showPage("orders")}>
                     Manage Orders
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate("/admin/stock-tracker")}
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: "10px",
-                      border: "none",
-                      background: "#14532d",
-                      color: "#ffffff",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
+                  <button type="button" onClick={() => showPage("stock-tracker")}>
                     Stock Tracker
                   </button>
                 </div>
               </div>
+
+              <div className="admin-panel">
+                <h2>Recent Activity</h2>
+                <p>No recent activity available.</p>
+              </div>
             </>
           )}
 
-          {activeTab === "orders" && (
-            <div>
-              <h1 style={{ margin: "0 0 16px", fontSize: "1.6rem" }}>
-                Orders &amp; Delivery Details
-              </h1>
-              {orders.length === 0 ? (
-                <div
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "12px",
-                    padding: "24px",
-                    color: "#64748b",
-                  }}
-                >
-                  No orders placed yet.
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {orders.map((ord, idx) => (
-                    <div
-                      key={ord?._id || ord?.orderId || idx}
-                      style={{
-                        background: "#ffffff",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: "12px",
-                        padding: "16px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          justifyContent: "space-between",
-                          gap: "8px",
-                          marginBottom: "8px",
-                        }}
-                      >
-                        <strong>
-                          Order #{ord?.orderId || ord?._id || idx + 1}
-                        </strong>
-                        <span style={{ fontWeight: 700, color: "#166534" }}>
-                          ₹{Number(ord?.totalAmount ?? ord?.total ?? 0)} •{" "}
-                          {ord?.paymentMethod || "Cash on Delivery"}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: "0.9rem", color: "#334155" }}>
-                        Customer: <strong>{ord?.customerName || "Customer"}</strong> |
-                        Phone: <strong>{ord?.customerPhone || "—"}</strong>
-                      </div>
-                      <div style={{ fontSize: "0.88rem", color: "#64748b", marginTop: "4px" }}>
-                        Address: {ord?.deliveryAddress || "Thalluru, AP"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === "products" && (
-            <div>
-              <h1 style={{ margin: "0 0 16px", fontSize: "1.6rem" }}>
-                Product Management
-              </h1>
-
-              {productStatusMsg && (
-                <div
-                  style={{
-                    background: "#f0fdf4",
-                    border: "1px solid #bbf7d0",
-                    color: "#166534",
-                    padding: "10px 14px",
-                    borderRadius: "8px",
-                    fontWeight: 600,
-                    marginBottom: "14px",
-                  }}
-                >
-                  {productStatusMsg}
-                </div>
-              )}
-
-              <form
-                onSubmit={handleAddProduct}
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "12px",
-                  padding: "18px",
-                  marginBottom: "20px",
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                  gap: "12px",
-                }}
-              >
-                <input
-                  type="text"
-                  placeholder="Product Name *"
-                  required
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                />
-                <input
-                  type="text"
-                  placeholder="Category"
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                />
-                <input
-                  type="number"
-                  placeholder="Price (₹) *"
-                  required
-                  value={newPrice}
-                  onChange={(e) => setNewPrice(e.target.value)}
-                  style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                />
-                <input
-                  type="number"
-                  placeholder="MRP (₹)"
-                  value={newMrp}
-                  onChange={(e) => setNewMrp(e.target.value)}
-                  style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                />
-                <input
-                  type="text"
-                  placeholder="Unit (e.g., 1 kg)"
-                  value={newUnit}
-                  onChange={(e) => setNewUnit(e.target.value)}
-                  style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                />
-                <input
-                  type="number"
-                  placeholder="Stock Qty"
-                  value={newStock}
-                  onChange={(e) => setNewStock(e.target.value)}
-                  style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                />
-                <input
-                  type="text"
-                  placeholder="Image URL"
-                  value={newImage}
-                  onChange={(e) => setNewImage(e.target.value)}
-                  style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                />
-                <input
-                  type="text"
-                  placeholder="Description"
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                />
-                <button
-                  type="submit"
-                  style={{
-                    padding: "9px 14px",
-                    borderRadius: "8px",
-                    border: "none",
-                    background: "#166534",
-                    color: "#ffffff",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  + Add Product
-                </button>
-              </form>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px" }}>
-                {products.map((p, i) => (
-                  <div
-                    key={p?._id || p?.id || i}
-                    style={{
-                      background: "#ffffff",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "10px",
-                      padding: "14px",
-                    }}
-                  >
-                    <div style={{ fontWeight: 700 }}>{p?.name || p?.title}</div>
-                    <div style={{ fontSize: "0.82rem", color: "#64748b" }}>
-                      {p?.category || "Grocery"} • Stock: {p?.stock ?? "—"}
-                    </div>
-                    <div style={{ fontWeight: 700, color: "#166534", marginTop: "6px" }}>
-                      ₹{Number(p?.price || 0)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {(activeTab === "inventory" ||
-            activeTab === "stock-tracker" ||
-            activeTab === "customers" ||
-            activeTab === "sales" ||
-            activeTab === "settings") && (
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "12px",
-                padding: "20px",
-              }}
-            >
-              <h1 style={{ margin: "0 0 8px", fontSize: "1.45rem", textTransform: "capitalize" }}>
-                {activeTab.replace("-", " ")}
-              </h1>
-              <p style={{ margin: 0, color: "#64748b" }}>
-                Store: FreshMart Provision Store, Thalluru, Andhra Pradesh 524142 •
-                Products: {products.length} • Orders: {orders.length} • Revenue: ₹{totalRevenue}
-              </p>
-            </div>
-          )}
-        </main>
-      </div>
+          {activePage === "products" && <ProductManagement />}
+          {activePage === "orders" && <OrderManagement />}
+          {activePage === "inventory" && <InventoryManagement />}
+          {activePage === "stock-tracker" && <StockTracker />}
+          {activePage === "customers" && <CustomerManagement />}
+          {activePage === "sales" && <SalesReports />}
+          {activePage === "settings" && <Settings />}
+        </section>
+      </main>
     </div>
   );
 }
+
+export default Admin;
