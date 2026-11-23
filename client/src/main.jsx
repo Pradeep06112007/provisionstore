@@ -6,6 +6,7 @@ import { CartProvider } from "./cartcontext.jsx";
 import App from "./App.jsx";
 import CustomerLogin from "./pages/CustomerLogin.jsx";
 import ProductDetails from "./pages/ProductDetails.jsx";
+import SearchResults from "./pages/SearchResults.jsx";
 import Admin from "./admin.jsx";
 import "./index.css";
 
@@ -46,6 +47,14 @@ createRoot(document.getElementById("root")).render(
               }
             />
             <Route path="/login" element={<CustomerLogin />} />
+            <Route
+              path="/search"
+              element={
+                <ProtectedCustomerRoute>
+                  <SearchResults />
+                </ProtectedCustomerRoute>
+              }
+            />
             <Route path="/cart" element={<CartRoute />} />
             <Route path="/product/:id" element={<ProductDetails />} />
             <Route path="/admin" element={<Admin />} />

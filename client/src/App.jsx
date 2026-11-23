@@ -1,477 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "./authcontext.jsx";
 import { useCart } from "./cartcontext.jsx";
-import "./App.css";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const api_url = `${API_BASE}/api/products`;
 
-const categories = [
-  { name: "All", emoji: "🛍️" },
-  { name: "Rice & Dals", emoji: "🌾" },
-  { name: "Oil & Ghee", emoji: "🫒" },
-  { name: "Snacks", emoji: "🍪" },
-  { name: "Beverages", emoji: "🥤" },
-  { name: "Dairy", emoji: "🥛" },
-  { name: "Personal Care", emoji: "🧴" },
-  { name: "Vegetables", emoji: "🥦" },
-  { name: "Household", emoji: "🧹" },
+const CATEGORIES = [
+  "All",
+  "Rice & Dals",
+  "Oil & Ghee",
+  "Snacks",
+  "Beverages",
+  "Dairy",
+  "Personal Care",
+  "Vegetables",
+  "Household",
 ];
-
-function App() {
-  const navigate = useNavigate();
-  const { user: customerUser, logoutCustomer } = useAuth();
-
-  const {
-    cart,
-    addToCart,
-    updateQuantity,
-    cartCount,
-  } = useCart();
-
-  const [products, setProducts] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  // GET products from MongoDB
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        setLoading(true);
-        setError("");
-
-        const response = await fetch(api_url);
-
-        if (!response.ok) {
-          throw new Error("Failed to retrieve products");
-        }
-
-        const data = await response.json();
-
-        if (!data.success) {
-          throw new Error(data.message || "Unable to load products");
-        }
-
-        const formattedProducts = data.products.map((item) => ({
-          id: item._id,
-          name: item.name,
-          size: item.unit,
-          price: item.price,
-          originalPrice: item.originalPrice,
-          category: item.category,
-          image: item.image,
-          stock: item.stock,
-          isAvailable: item.isAvailable,
-          isFeatured: item.isFeatured,
-          badge: item.isFeatured ? "Featured" : "",
-        }));
-
-        setProducts(formattedProducts);
-      } catch (error) {
-        console.error("Product loading error:", error);
-        setError(error.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProducts();
-  }, []);
-
-  // Search and category filtering
-  const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
-      const matchesSearch =
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.category.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesCategory =
-        selectedCategory === "All" ||
-        product.category === selectedCategory;
-
-      return matchesSearch && matchesCategory;
-    });
-  }, [products, searchTerm, selectedCategory]);
-
-  // Find product quantity in cart
-  const getCartItem = (productId) => {
-    return cart.find((item) => item.id === productId);
-  };
-
-  // Select category
-  const selectCategory = (name) => {
-    setSelectedCategory(name);
-    setSearchTerm("");
-
-    document.getElementById("products")?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  };
-
-  const handleCustomerLogout = () => {
-    logoutCustomer();
-    navigate("/login", { replace: true });
-  };
-
-  return (
-    <div className="app">
-
-      {/* HEADER */}
-
-      <header className="navbar">
-
-        <div
-          className="logo"
-          onClick={() => {
-            setSelectedCategory("All");
-            setSearchTerm("");
-            window.scrollTo({ top: 0, behavior: "smooth" });
-          }}
-        >
-          <span className="logo-icon">🛒</span>
-          Fresh<span className="logo-dark">Mart</span>
-        </div>
-
-        <div className="delivery-info">
-          <span>📍</span>
-          <div>
-            <small>DELIVERING TO</small>
-            <strong>Thalluru, AP</strong>
-          </div>
-        </div>
-
-        <div className="search">
-          <span>⌕</span>
-
-          <input
-            type="search"
-            placeholder="Search for rice, oil, snacks and more..."
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setSelectedCategory("All");
-            }}
-          />
-
-          {searchTerm && (
-            <button
-              className="clear-search"
-              onClick={() => setSearchTerm("")}
-            >
-              ×
-            </button>
-          )}
-        </div>
-
-        {customerUser ? (
-          <div className="customer-nav-actions" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-              Hi, {customerUser.name?.split(" ")[0] || "Customer"}
-            </span>
-            <button
-              type="button"
-              className="cart-button"
-              onClick={handleCustomerLogout}
-            >
-              Logout
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="cart-button"
-            onClick={() => navigate("/login")}
-          >
-            <span>👤</span>
-            <span>Sign In</span>
-          </button>
-        )}
-
-        <button
-          className="cart-button"
-          onClick={() => navigate("/cart")}
-        >
-          <span>🛒</span>
-          <span>Cart</span>
-          <span className="cart-count">{cartCount}</span>
-        </button>
-
-      </header>
-
-      {/* HERO */}
-
-      <section className="hero">
-        <div className="hero-content">
-
-          <span className="hero-label">
-            YOUR NEIGHBOURHOOD GROCERY STORE
-          </span>
-
-          <h1>
-            Groceries made
-            <br />
-            simple. Life made
-            <br />
-            <span>better.</span>
-          </h1>
-
-          <p>
-            Everything you need for your home,
-            delivered right to your doorstep.
-          </p>
-
-          <button
-            className="shop-button"
-            onClick={() =>
-              document.getElementById("products")?.scrollIntoView({
-                behavior: "smooth",
-              })
-            }
-          >
-            Start Shopping →
-          </button>
-
-        </div>
-
-        <div className="hero-art">
-          <div className="hero-circle">🛍️</div>
-          <span className="hero-decoration">🥬</span>
-          <span className="hero-decoration second">🍎</span>
-        </div>
-      </section>
-
-      {/* CATEGORY NAVIGATION */}
-
-      <section className="category-section">
-        <div className="section-heading">
-          <div>
-            <h2>Shop by Category</h2>
-            <p>Everything you need, all in one place.</p>
-          </div>
-        </div>
-
-        <div className="category-list">
-          {categories.map((category) => (
-            <button
-              key={category.name}
-              className={`category-chip ${
-                selectedCategory === category.name ? "selected" : ""
-              }`}
-              onClick={() => selectCategory(category.name)}
-            >
-              <span>{category.emoji}</span>
-              {category.name}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* PRODUCTS */}
-
-      <main className="products-section" id="products">
-
-        <div className="products-heading">
-          <div>
-            <h2>
-              {searchTerm
-                ? "Search Results"
-                : selectedCategory === "All"
-                  ? "Popular Products"
-                  : selectedCategory}
-            </h2>
-
-            <p>
-              {loading
-                ? "Loading products..."
-                : `${filteredProducts.length} products available`}
-            </p>
-          </div>
-
-          {(searchTerm || selectedCategory !== "All") && (
-            <button
-              className="view-all"
-              onClick={() => {
-                setSearchTerm("");
-                setSelectedCategory("All");
-              }}
-            >
-              View all products
-            </button>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="no-products">
-            <h3>Loading products...</h3>
-            <p>Please wait while we retrieve products from FreshMart.</p>
-          </div>
-        ) : error ? (
-          <div className="no-products">
-            <span>⚠️</span>
-            <h3>Unable to load products</h3>
-            <p>{error}</p>
-            <p>Please check your connection or verify that the backend server is running.</p>
-          </div>
-        ) : filteredProducts.length > 0 ? (
-          <div className="product-grid">
-
-            {filteredProducts.map((product) => {
-              const cartItem = getCartItem(product.id);
-              const openDetails = () => navigate(`/product/${product.id}`);
-
-              return (
-                <article className="product-card" key={product.id}>
-
-                  <div
-                    className="product-image"
-                    onClick={openDetails}
-                    style={{ cursor: "pointer" }}
-                  >
-
-                    {product.badge && (
-                      <span className="product-badge">
-                        {product.badge}
-                      </span>
-                    )}
-
-                    <img
-                      src={product.image || ""}
-                      alt={product.name}
-                      loading="lazy"
-                    />
-
-                  </div>
-
-                  <div className="product-details">
-
-                    <div
-                      onClick={openDetails}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <span className="product-category">
-                        {product.category}
-                      </span>
-
-                      <h3>{product.name}</h3>
-
-                      <p className="product-size">
-                        {product.size}
-                      </p>
-                    </div>
-
-                    <div className="product-bottom">
-
-                      <div
-                        className="product-price"
-                        onClick={openDetails}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <strong>₹{product.price}</strong>
-                      </div>
-
-                      {!product.isAvailable || product.stock <= 0 ? (
-                        <button className="add-button" disabled>
-                          OUT OF STOCK
-                        </button>
-                      ) : cartItem ? (
-                        <div className="quantity-controls">
-
-                          <button
-                            onClick={() =>
-                              updateQuantity(product.id, -1)
-                            }
-                          >
-                            −
-                          </button>
-
-                          <span>{cartItem.quantity}</span>
-
-                          <button
-                            onClick={() =>
-                              updateQuantity(product.id, 1)
-                            }
-                            disabled={cartItem.quantity >= product.stock}
-                          >
-                            +
-                          </button>
-
-                        </div>
-                      ) : (
-                        <button
-                          className="add-button"
-                          onClick={() => addToCart(product)}
-                        >
-                          ADD +
-                        </button>
-                      )}
-
-                    </div>
-                  </div>
-
-                </article>
-              );
-            })}
-
-          </div>
-        ) : (
-          <div className="no-products">
-            <span>🔍</span>
-            <h3>No products found</h3>
-            <p>Try searching for another product.</p>
-
-            <button
-              onClick={() => {
-                setSearchTerm("");
-                setSelectedCategory("All");
-              }}
-            >
-              Show All Products
-            </button>
-          </div>
-        )}
-
-      </main>
-
-      {/* FOOTER */}
-
-      <footer className="footer">
-        <h2>🛒 FreshMart</h2>
-        <p>Your neighbourhood store, now online.</p>
-
-        <div className="footer-contact">
-          <p>
-            📍 Store / Service Area:{" "}
-            <a
-              href="https://www.google.com/maps?q=14.801237,79.941260"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Thalluru, Andhra Pradesh 524142 (14.801237, 79.941260)
-            </a>
-          </p>
-          <p>
-            📞 Phone: <a href="tel:+919063998638">+91 9063998638</a>
-          </p>
-          <p>
-            ✉️ Email:{" "}
-            <a href="mailto:pradeepkumaramirisetty@gmail.com">
-              pradeepkumaramirisetty@gmail.com
-            </a>
-          </p>
-        </div>
-
-        <p>© 2026 FreshMart. All rights reserved.</p>
-      </footer>
-
-    </div>
-  );
-}
-
-export default App;
 
 function createCustomerQrCode() {
   return `FM-CUST-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Date.now()
@@ -527,7 +71,7 @@ function buildCustomerQrGrid(text, size = 25) {
   return grid;
 }
 
-export function CustomerQrMenu() {
+function CustomerQrMenu() {
   const btnRef = useRef(null);
   const menuRef = useRef(null);
   const canvasRef = useRef(null);
@@ -760,3 +304,567 @@ export function CustomerQrMenu() {
     </>
   );
 }
+
+function App() {
+  const navigate = useNavigate();
+  const authCtx = typeof useAuth === "function" ? useAuth() : null;
+  const cartCtx = typeof useCart === "function" ? useCart() : null;
+
+  const productsSectionRef = useRef(null);
+
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [searchText, setSearchText] = useState("");
+  const [localCartCount, setLocalCartCount] = useState(0);
+
+  const customerName =
+    authCtx?.user?.name ||
+    (() => {
+      try {
+        const raw = localStorage.getItem("freshmart-customer-user");
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed?.name || "Customer";
+      } catch {
+        return "Customer";
+      }
+    })();
+
+  const syncLocalCartCount = useCallback(() => {
+    try {
+      const items = JSON.parse(localStorage.getItem("freshmart-cart") || "[]");
+      const count = Array.isArray(items)
+        ? items.reduce((sum, item) => sum + (Number(item.qty) || 1), 0)
+        : 0;
+      setLocalCartCount(count);
+    } catch {
+      setLocalCartCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    syncLocalCartCount();
+  }, [syncLocalCartCount]);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+
+    fetch(`${API_BASE}/api/products`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!active) return;
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.products)
+          ? data.products
+          : [];
+        setProducts(list);
+        try {
+          localStorage.setItem("freshmart-products", JSON.stringify(list));
+        } catch {
+          // ignore storage errors
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        try {
+          const cached = JSON.parse(
+            localStorage.getItem("freshmart-products") || "[]"
+          );
+          setProducts(Array.isArray(cached) ? cached : []);
+        } catch {
+          setProducts([]);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filteredByCategory = useMemo(() => {
+    if (selectedCategory === "All") return products;
+    return products.filter(
+      (item) =>
+        String(item?.category || "").toLowerCase() ===
+        selectedCategory.toLowerCase()
+    );
+  }, [products, selectedCategory]);
+
+  const cartBadgeCount = useMemo(() => {
+    if (typeof cartCtx?.cartCount === "number") return cartCtx.cartCount;
+    if (Array.isArray(cartCtx?.cart)) {
+      return cartCtx.cart.reduce(
+        (sum, item) => sum + (Number(item.qty || item.quantity) || 1),
+        0
+      );
+    }
+    return localCartCount;
+  }, [cartCtx, localCartCount]);
+
+  const handleHeaderSearchSubmit = (e) => {
+    e.preventDefault();
+    const trimmed = searchText.trim();
+    navigate(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
+  };
+
+  const handleAddToCart = (item) => {
+    if (cartCtx && typeof cartCtx.addToCart === "function") {
+      cartCtx.addToCart(item);
+      return;
+    }
+    try {
+      const current = JSON.parse(localStorage.getItem("freshmart-cart") || "[]");
+      const id = item._id || item.id || item.name;
+      const idx = current.findIndex((x) => (x._id || x.id || x.name) === id);
+      if (idx >= 0) {
+        current[idx].qty = (current[idx].qty || 1) + 1;
+      } else {
+        current.push({ ...item, qty: 1 });
+      }
+      localStorage.setItem("freshmart-cart", JSON.stringify(current));
+      syncLocalCartCount();
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const handleLogout = () => {
+    if (typeof authCtx?.logout === "function") {
+      authCtx.logout();
+    } else if (typeof authCtx?.logoutCustomer === "function") {
+      authCtx.logoutCustomer();
+    } else {
+      localStorage.removeItem("freshmart-customer-token");
+      localStorage.removeItem("freshmart-customer-user");
+    }
+    navigate("/login", { replace: true });
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#f8fafc", color: "#0f172a" }}>
+      {/* Top Navbar */}
+      <header
+        style={{
+          background: "#ffffff",
+          borderBottom: "1px solid #e2e8f0",
+          position: "sticky",
+          top: 0,
+          zIndex: 50,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "1200px",
+            margin: "0 auto",
+            padding: "12px 20px",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            <Link
+              to="/"
+              style={{
+                textDecoration: "none",
+                fontWeight: 800,
+                fontSize: "1.35rem",
+                color: "#166534",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <span>🛒</span>
+              <span>Fresh Mart</span>
+            </Link>
+
+            <div style={{ fontSize: "0.78rem", lineHeight: 1.25 }}>
+              <div style={{ color: "#64748b", fontWeight: 600 }}>
+                DELIVERING TO
+              </div>
+              <div style={{ color: "#0f172a", fontWeight: 700 }}>
+                📍 Thalluru, AP
+              </div>
+            </div>
+          </div>
+
+          {/* Search Form -> Navigates to dedicated /search page */}
+          <form
+            onSubmit={handleHeaderSearchSubmit}
+            style={{
+              flex: "1 1 280px",
+              maxWidth: "460px",
+              display: "flex",
+              gap: "6px",
+            }}
+          >
+            <input
+              type="search"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Search for rice, oil, snacks and more..."
+              aria-label="Search products"
+              style={{
+                flex: 1,
+                padding: "9px 14px",
+                borderRadius: "8px",
+                border: "1px solid #cbd5e1",
+                background: "#f1f5f9",
+                fontSize: "0.92rem",
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                padding: "9px 14px",
+                borderRadius: "8px",
+                border: "none",
+                background: "#166534",
+                color: "#ffffff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Search
+            </button>
+          </form>
+
+          {/* Right User, Logout, Cart & Three-Dots QR Menu */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+              Hi, {customerName}
+            </span>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "none",
+                background: "#15803d",
+                color: "#ffffff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Logout
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate("/cart")}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "none",
+                background: "#166534",
+                color: "#ffffff",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <span>🛒 Cart</span>
+              <span
+                style={{
+                  background: "#ffffff",
+                  color: "#166534",
+                  borderRadius: "999px",
+                  padding: "1px 7px",
+                  fontSize: "0.78rem",
+                  fontWeight: 700,
+                }}
+              >
+                {cartBadgeCount}
+              </span>
+            </button>
+
+            <CustomerQrMenu />
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "24px 20px" }}>
+        {/* Hero Banner */}
+        <section
+          style={{
+            background: "linear-gradient(135deg, #14532d 0%, #166534 100%)",
+            color: "#ffffff",
+            borderRadius: "18px",
+            padding: "40px 36px",
+            marginBottom: "28px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.78rem",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              color: "#bbf7d0",
+              marginBottom: "10px",
+            }}
+          >
+            YOUR NEIGHBOURHOOD GROCERY STORE
+          </div>
+          <h1
+            style={{
+              margin: "0 0 12px",
+              fontSize: "2.35rem",
+              lineHeight: 1.15,
+              maxWidth: "520px",
+            }}
+          >
+            Groceries made simple. Life made better.
+          </h1>
+          <p
+            style={{
+              margin: "0 0 22px",
+              color: "#dcfce7",
+              maxWidth: "460px",
+              fontSize: "0.98rem",
+            }}
+          >
+            Everything you need for your home, delivered right to your doorstep.
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              productsSectionRef.current?.scrollIntoView({ behavior: "smooth" })
+            }
+            style={{
+              padding: "11px 20px",
+              borderRadius: "8px",
+              border: "none",
+              background: "#facc15",
+              color: "#0f172a",
+              fontWeight: 700,
+              fontSize: "0.95rem",
+              cursor: "pointer",
+            }}
+          >
+            Start Shopping →
+          </button>
+        </section>
+
+        {/* Shop by Category */}
+        <section ref={productsSectionRef} style={{ marginBottom: "28px" }}>
+          <h2 style={{ margin: "0 0 4px", fontSize: "1.35rem" }}>
+            Shop by Category
+          </h2>
+          <p style={{ margin: "0 0 14px", color: "#64748b", fontSize: "0.9rem" }}>
+            Everything you need, all in one place
+          </p>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "10px",
+              marginBottom: "22px",
+            }}
+          >
+            {CATEGORIES.map((category) => {
+              const active = selectedCategory === category;
+              return (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setSelectedCategory(category)}
+                  style={{
+                    padding: "9px 16px",
+                    borderRadius: "10px",
+                    border: active ? "1.5px solid #166534" : "1px solid #e2e8f0",
+                    background: active ? "#f0fdf4" : "#ffffff",
+                    color: active ? "#166534" : "#334155",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {category}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Product Grid */}
+          {loading ? (
+            <p style={{ color: "#475569" }}>Loading fresh groceries...</p>
+          ) : filteredByCategory.length === 0 ? (
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "12px",
+                padding: "28px",
+                textAlign: "center",
+                color: "#475569",
+              }}
+            >
+              No products available in this category yet.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(225px, 1fr))",
+                gap: "16px",
+              }}
+            >
+              {filteredByCategory.map((item, idx) => {
+                const id = item._id || item.id || idx;
+                const title = item.name || item.title || "Grocery Item";
+                const price = Number(item.price || 0);
+                const imageSrc = item.image || item.imageUrl || "";
+
+                return (
+                  <div
+                    key={id}
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "12px",
+                      padding: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                    }}
+                  >
+                    <div>
+                      {imageSrc ? (
+                        <Link to={`/product/${id}`}>
+                          <img
+                            src={imageSrc}
+                            alt={title}
+                            style={{
+                              width: "100%",
+                              height: "150px",
+                              objectFit: "cover",
+                              borderRadius: "8px",
+                              marginBottom: "10px",
+                            }}
+                          />
+                        </Link>
+                      ) : null}
+                      <div
+                        style={{
+                          fontSize: "0.78rem",
+                          color: "#166534",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {item.category || "Grocery"}
+                      </div>
+                      <Link
+                        to={`/product/${id}`}
+                        style={{
+                          textDecoration: "none",
+                          color: "#0f172a",
+                          fontWeight: 700,
+                          fontSize: "1rem",
+                          display: "block",
+                          marginTop: "2px",
+                        }}
+                      >
+                        {title}
+                      </Link>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        paddingTop: "8px",
+                        borderTop: "1px solid #f1f5f9",
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: "#0f172a" }}>
+                        ₹{price}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleAddToCart(item)}
+                        style={{
+                          padding: "7px 12px",
+                          borderRadius: "7px",
+                          border: "none",
+                          background: "#166534",
+                          color: "#ffffff",
+                          fontWeight: 600,
+                          fontSize: "0.85rem",
+                          cursor: "pointer",
+                        }}
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </main>
+
+      {/* Store Footer */}
+      <footer
+        style={{
+          background: "#0f172a",
+          color: "#cbd5e1",
+          padding: "28px 20px",
+          marginTop: "40px",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "1200px",
+            margin: "0 auto",
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "space-between",
+            gap: "16px",
+            fontSize: "0.9rem",
+          }}
+        >
+          <div>
+            <strong style={{ color: "#ffffff", fontSize: "1.05rem" }}>
+              🛒 FreshMart Provision Store
+            </strong>
+            <p style={{ margin: "6px 0 0" }}>
+              Thalluru, Andhra Pradesh 524142 •{" "}
+              <a
+                href="https://www.google.com/maps?q=14.801237,79.941260"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "#86efac" }}
+              >
+                View on Google Maps
+              </a>
+            </p>
+          </div>
+
+          <div>
+            <div>Phone: +91 9063998638</div>
+            <div>Email: pradeepkumaramirisetty@gmail.com</div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+export default App;
