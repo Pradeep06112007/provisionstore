@@ -1,205 +1,556 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useCart } from "../cartcontext.jsx";
-import "./ProductDetails.css";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const CART_STORAGE_KEY = "freshmart-cart";
 
-function normalizeProduct(item) {
-  return {
-    id: item._id || item.id,
-    name: item.name,
-    size: item.unit || item.size || "",
-    price: item.price,
-    originalPrice: item.originalPrice,
-    category: item.category,
-    description:
-      item.description ||
-      "Fresh quality grocery item sourced for everyday household needs.",
-    image: item.image || "",
-    stock: Number(item.stock ?? 0),
-    isAvailable: item.isAvailable !== false,
-    isFeatured: Boolean(item.isFeatured),
-  };
+function getProductKey(item, fallbackId = "") {
+  return String(
+    item?._id ??
+      item?.id ??
+      item?.productId ??
+      fallbackId ??
+      item?.name ??
+      item?.title ??
+      ""
+  ).trim();
 }
 
-export default function ProductDetails() {
+function ProductDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { cart, addToCart, updateQuantity, cartCount } = useCart();
+  const cartCtx = typeof useCart === "function" ? useCart() : null;
 
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [localCart, setLocalCart] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CART_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const syncLocalCart = useCallback((nextItems) => {
+    setLocalCart(nextItems);
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(nextItems));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "instant" });
+    let active = true;
+    setLoading(true);
+    setError("");
 
-    const fetchProductDetails = async () => {
-      try {
-        setLoading(true);
-        setError("");
-
-        const singleRes = await fetch(`${API_BASE}/api/products/${id}`);
-        if (singleRes.ok) {
-          const singleData = await singleRes.json();
-          const rawItem = singleData.product || singleData.data || singleData;
-          if (rawItem && (rawItem._id || rawItem.name)) {
-            setProduct(normalizeProduct(rawItem));
-            return;
-          }
-        }
-
-        const listRes = await fetch(`${API_BASE}/api/products`);
-        if (!listRes.ok) {
-          throw new Error("Unable to fetch product details.");
-        }
-
-        const listData = await listRes.json();
-        const items = listData.products || listData.data || [];
-        const matched = items.find(
-          (item) => String(item._id || item.id) === String(id)
-        );
-
-        if (!matched) {
-          throw new Error("Product not found.");
-        }
-
-        setProduct(normalizeProduct(matched));
-      } catch (err) {
-        setError(err.message || "Failed to load product details.");
-      } finally {
-        setLoading(false);
-      }
+    const findFromList = (list) => {
+      if (!Array.isArray(list)) return null;
+      return (
+        list.find(
+          (p) =>
+            String(p?._id || "") === String(id) ||
+            String(p?.id || "") === String(id)
+        ) || null
+      );
     };
 
-    if (id) {
-      fetchProductDetails();
-    }
+    fetch(`${API_BASE}/api/products/${encodeURIComponent(id || "")}`)
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          const item = data?.product || data;
+          if (item && (item.name || item.title || item._id || item.id)) {
+            return item;
+          }
+        }
+        const allRes = await fetch(`${API_BASE}/api/products`);
+        const allData = await allRes.json();
+        const list = Array.isArray(allData)
+          ? allData
+          : Array.isArray(allData?.products)
+          ? allData.products
+          : [];
+        return findFromList(list);
+      })
+      .then((found) => {
+        if (!active) return;
+        if (found) {
+          setProduct(found);
+        } else {
+          try {
+            const cached = JSON.parse(
+              localStorage.getItem("freshmart-products") || "[]"
+            );
+            const fallback = findFromList(cached);
+            if (fallback) {
+              setProduct(fallback);
+            } else {
+              setError("Product not found.");
+            }
+          } catch {
+            setError("Product not found.");
+          }
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        try {
+          const cached = JSON.parse(
+            localStorage.getItem("freshmart-products") || "[]"
+          );
+          const fallback = findFromList(cached);
+          if (fallback) {
+            setProduct(fallback);
+          } else {
+            setError("Unable to load product details right now.");
+          }
+        } catch {
+          setError("Unable to load product details right now.");
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [id]);
 
-  const cartItem = product
-    ? cart.find((item) => item.id === product.id)
-    : null;
+  const activeCartList = useMemo(() => {
+    if (Array.isArray(cartCtx?.cart)) return cartCtx.cart;
+    if (Array.isArray(cartCtx?.items)) return cartCtx.items;
+    if (Array.isArray(cartCtx?.cartItems)) return cartCtx.cartItems;
+    return Array.isArray(localCart) ? localCart : [];
+  }, [cartCtx, localCart]);
 
-  const outOfStock = !product || !product.isAvailable || product.stock <= 0;
+  const cartBadgeCount = useMemo(() => {
+    if (typeof cartCtx?.cartCount === "number") return cartCtx.cartCount;
+    if (typeof cartCtx?.totalItems === "number") return cartCtx.totalItems;
+    return activeCartList.reduce(
+      (sum, item) => sum + (Number(item?.qty ?? item?.quantity) || 1),
+      0
+    );
+  }, [cartCtx, activeCartList]);
+
+  const targetKey = getProductKey(product, id);
+
+  const currentQty = useMemo(() => {
+    if (!targetKey) return 0;
+    const match = activeCartList.find(
+      (item, idx) => getProductKey(item, idx) === targetKey
+    );
+    return match ? Number(match.qty ?? match.quantity) || 1 : 0;
+  }, [activeCartList, targetKey]);
+
+  const handleAddOne = () => {
+    if (!product || !targetKey) return;
+    const normalizedProduct = {
+      ...product,
+      _id: product._id ?? targetKey,
+      id: product.id ?? targetKey,
+    };
+
+    if (cartCtx && typeof cartCtx.addToCart === "function") {
+      cartCtx.addToCart(normalizedProduct);
+      return;
+    }
+
+    const next = [...localCart];
+    const idx = next.findIndex(
+      (item, i) => getProductKey(item, i) === targetKey
+    );
+    if (idx >= 0) {
+      const nextQty = (Number(next[idx].qty ?? next[idx].quantity) || 1) + 1;
+      next[idx] = { ...next[idx], qty: nextQty, quantity: nextQty };
+    } else {
+      next.push({ ...normalizedProduct, qty: 1, quantity: 1 });
+    }
+    syncLocalCart(next);
+  };
+
+  const handleDecrement = () => {
+    if (!targetKey || currentQty <= 0) return;
+
+    if (currentQty <= 1) {
+      if (cartCtx && typeof cartCtx.removeFromCart === "function") {
+        cartCtx.removeFromCart(targetKey);
+      } else if (cartCtx && typeof cartCtx.updateQuantity === "function") {
+        cartCtx.updateQuantity(targetKey, 0);
+      } else if (cartCtx && typeof cartCtx.decreaseQty === "function") {
+        cartCtx.decreaseQty(targetKey);
+      } else {
+        const next = localCart.filter(
+          (item, i) => getProductKey(item, i) !== targetKey
+        );
+        syncLocalCart(next);
+      }
+      return;
+    }
+
+    const nextQty = currentQty - 1;
+    if (cartCtx && typeof cartCtx.updateQuantity === "function") {
+      cartCtx.updateQuantity(targetKey, nextQty);
+      return;
+    }
+    if (cartCtx && typeof cartCtx.decreaseQty === "function") {
+      cartCtx.decreaseQty(targetKey);
+      return;
+    }
+
+    const next = localCart.map((item, i) =>
+      getProductKey(item, i) === targetKey
+        ? { ...item, qty: nextQty, quantity: nextQty }
+        : item
+    );
+    syncLocalCart(next);
+  };
+
+  const title = product?.name || product?.title || "Product";
+  const price = Number(product?.price || 0);
+  const mrp = Number(product?.mrp || product?.originalPrice || 0);
+  const category = product?.category || "GROCERY";
+  const unit = product?.unit || product?.packSize || "1 kg";
+  const description =
+    product?.description || "Freshly stocked grocery item available at FreshMart.";
+  const imageSrc = product?.image || product?.imageUrl || "";
+  const stockCount =
+    product?.stock ?? product?.quantityAvailable ?? product?.qtyAvailable;
+  const isOutOfStock = typeof stockCount === "number" && stockCount <= 0;
 
   return (
-    <div className="prod-detail-page">
-      <header className="prod-detail-header">
-        <button
-          type="button"
-          className="prod-back-btn"
-          onClick={() => navigate("/")}
+    <div style={{ minHeight: "100vh", background: "#f8fafc", color: "#0f172a" }}>
+      {/* Top Bar */}
+      <header
+        style={{
+          background: "#ffffff",
+          borderBottom: "1px solid #e2e8f0",
+          padding: "12px 20px",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "1120px",
+            margin: "0 auto",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+          }}
         >
-          ← Back to Store
-        </button>
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            style={{
+              padding: "8px 14px",
+              borderRadius: "8px",
+              border: "1px solid #cbd5e1",
+              background: "#ffffff",
+              color: "#0f172a",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            ← Back to Store
+          </button>
 
-        <div className="prod-brand" onClick={() => navigate("/")}>
-          <span>🛒</span>
-          <strong>FreshMart</strong>
+          <Link
+            to="/"
+            style={{
+              textDecoration: "none",
+              fontWeight: 800,
+              fontSize: "1.25rem",
+              color: "#166534",
+            }}
+          >
+            🛒 FreshMart
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => navigate("/cart")}
+            style={{
+              padding: "8px 14px",
+              borderRadius: "8px",
+              border: "none",
+              background: "#166534",
+              color: "#ffffff",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <span>🛒 Cart</span>
+            <span
+              style={{
+                background: "#ffffff",
+                color: "#166534",
+                borderRadius: "999px",
+                padding: "1px 7px",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+              }}
+            >
+              {cartBadgeCount}
+            </span>
+          </button>
         </div>
-
-        <button
-          type="button"
-          className="prod-cart-btn"
-          onClick={() => navigate("/cart")}
-        >
-          <span>🛒</span>
-          <span>Cart</span>
-          <span className="prod-cart-badge">{cartCount}</span>
-        </button>
       </header>
 
-      <main className="prod-detail-container">
+      {/* Main Details Card */}
+      <main style={{ maxWidth: "960px", margin: "28px auto", padding: "0 20px" }}>
         {loading ? (
-          <div className="prod-state-box">
-            <h2>Loading product details...</h2>
-            <p>Fetching item information from FreshMart.</p>
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "16px",
+              padding: "36px",
+              textAlign: "center",
+              color: "#475569",
+            }}
+          >
+            Loading product details...
           </div>
         ) : error || !product ? (
-          <div className="prod-state-box">
-            <h2>Product unavailable</h2>
-            <p>{error || "Could not find this product."}</p>
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "16px",
+              padding: "36px",
+              textAlign: "center",
+            }}
+          >
+            <p style={{ margin: "0 0 14px", color: "#b91c1c", fontWeight: 600 }}>
+              {error || "Product not found."}
+            </p>
             <button
               type="button"
-              className="prod-primary-btn"
               onClick={() => navigate("/")}
+              style={{
+                padding: "9px 16px",
+                borderRadius: "8px",
+                border: "none",
+                background: "#166534",
+                color: "#ffffff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
             >
-              Return to Products
+              Return to Store
             </button>
           </div>
         ) : (
-          <div className="prod-detail-card">
-            <div className="prod-detail-media">
-              {product.isFeatured && (
-                <span className="prod-featured-tag">Featured</span>
-              )}
-              {product.image ? (
-                <img src={product.image} alt={product.name} />
-              ) : (
-                <div className="prod-img-placeholder">🛍️</div>
-              )}
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "18px",
+              padding: "28px",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "28px",
+              alignItems: "center",
+              boxShadow: "0 10px 25px rgba(15, 23, 42, 0.06)",
+            }}
+          >
+            <div style={{ position: "relative" }}>
+              <span
+                style={{
+                  position: "inline-block",
+                  display: "inline-block",
+                  background: "#dcfce7",
+                  color: "#166534",
+                  fontWeight: 700,
+                  fontSize: "0.78rem",
+                  padding: "4px 10px",
+                  borderRadius: "999px",
+                  marginBottom: "10px",
+                }}
+              >
+                Featured
+              </span>
+              {imageSrc ? (
+                <img
+                  src={imageSrc}
+                  alt={title}
+                  style={{
+                    width: "100%",
+                    maxHeight: "300px",
+                    objectFit: "cover",
+                    borderRadius: "12px",
+                    border: "1px solid #e2e8f0",
+                  }}
+                />
+              ) : null}
             </div>
 
-            <div className="prod-detail-info">
-              <span className="prod-category-pill">{product.category}</span>
-              <h1 className="prod-title">{product.name}</h1>
-
-              {product.size && (
-                <p className="prod-unit">Pack / Unit: {product.size}</p>
-              )}
-
-              <div className="prod-price-row">
-                <strong className="prod-price">₹{product.price}</strong>
-                {product.originalPrice &&
-                  Number(product.originalPrice) > Number(product.price) && (
-                    <span className="prod-mrp">₹{product.originalPrice}</span>
-                  )}
+            <div>
+              <div
+                style={{
+                  fontSize: "0.78rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.06em",
+                  color: "#166534",
+                  textTransform: "uppercase",
+                  marginBottom: "6px",
+                }}
+              >
+                {category}
               </div>
 
-              <div className="prod-meta-grid">
-                <div className="prod-meta-item">
-                  <small>Availability</small>
-                  <strong>
-                    {outOfStock ? "Out of Stock" : "In Stock"}
-                  </strong>
-                </div>
-                <div className="prod-meta-item">
-                  <small>Stock Available</small>
-                  <strong>
-                    {product.stock} {product.size ? `(${product.size})` : "units"}
-                  </strong>
-                </div>
+              <h1 style={{ margin: "0 0 6px", fontSize: "1.85rem", color: "#0f172a" }}>
+                {title}
+              </h1>
+
+              <div style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: "14px" }}>
+                Pack / Unit: {unit}
               </div>
 
-              <div className="prod-description-box">
-                <h3>Product Details</h3>
-                <p>{product.description}</p>
-              </div>
-
-              <div className="prod-actions">
-                {outOfStock ? (
-                  <button
-                    type="button"
-                    className="prod-primary-btn"
-                    disabled
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: "10px",
+                  marginBottom: "18px",
+                }}
+              >
+                <span style={{ fontSize: "1.65rem", fontWeight: 800, color: "#0f172a" }}>
+                  ₹{price}
+                </span>
+                {mrp > price && (
+                  <span
+                    style={{
+                      fontSize: "1rem",
+                      color: "#94a3b8",
+                      textDecoration: "line-through",
+                    }}
                   >
-                    OUT OF STOCK
-                  </button>
-                ) : cartItem ? (
-                  <div className="prod-qty-box">
+                    ₹{mrp}
+                  </span>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "10px",
+                  marginBottom: "18px",
+                }}
+              >
+                <div
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "10px",
+                    padding: "10px 12px",
+                  }}
+                >
+                  <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                    Availability
+                  </div>
+                  <div style={{ fontWeight: 700, color: "#0f172a", marginTop: "2px" }}>
+                    {isOutOfStock ? "Out of Stock" : "In Stock"}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "10px",
+                    padding: "10px 12px",
+                  }}
+                >
+                  <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                    Stock Available
+                  </div>
+                  <div style={{ fontWeight: 700, color: "#0f172a", marginTop: "2px" }}>
+                    {typeof stockCount === "number"
+                      ? `${stockCount} (${unit})`
+                      : `Available (${unit})`}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontWeight: 700, fontSize: "0.92rem", marginBottom: "4px" }}>
+                  Product Details
+                </div>
+                <p style={{ margin: 0, color: "#475569", fontSize: "0.94rem" }}>
+                  {description}
+                </p>
+              </div>
+
+              {/* Quantity Box & Add / Go to Cart Controls */}
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: "12px",
+                }}
+              >
+                {currentQty > 0 ? (
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      border: "1.5px solid #166534",
+                      background: "#f0fdf4",
+                      borderRadius: "10px",
+                      padding: "8px 14px",
+                    }}
+                  >
                     <button
                       type="button"
-                      onClick={() => updateQuantity(product.id, -1)}
+                      aria-label="Decrease quantity"
+                      onClick={handleDecrement}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "#166534",
+                        fontWeight: 800,
+                        fontSize: "1.15rem",
+                        cursor: "pointer",
+                        padding: "0 4px",
+                      }}
                     >
                       −
                     </button>
-                    <span>{cartItem.quantity}</span>
+                    <span
+                      style={{
+                        fontWeight: 800,
+                        fontSize: "1rem",
+                        minWidth: "20px",
+                        textAlign: "center",
+                        color: "#0f172a",
+                      }}
+                    >
+                      {currentQty}
+                    </span>
                     <button
                       type="button"
-                      onClick={() => updateQuantity(product.id, 1)}
-                      disabled={cartItem.quantity >= product.stock}
+                      aria-label="Increase quantity"
+                      disabled={isOutOfStock}
+                      onClick={handleAddOne}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "#166534",
+                        fontWeight: 800,
+                        fontSize: "1.15rem",
+                        cursor: isOutOfStock ? "not-allowed" : "pointer",
+                        padding: "0 4px",
+                      }}
                     >
                       +
                     </button>
@@ -207,19 +558,38 @@ export default function ProductDetails() {
                 ) : (
                   <button
                     type="button"
-                    className="prod-primary-btn"
-                    onClick={() => addToCart(product)}
+                    disabled={isOutOfStock}
+                    onClick={handleAddOne}
+                    style={{
+                      padding: "11px 20px",
+                      borderRadius: "10px",
+                      border: "none",
+                      background: isOutOfStock ? "#94a3b8" : "#166534",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      fontSize: "0.92rem",
+                      cursor: isOutOfStock ? "not-allowed" : "pointer",
+                    }}
                   >
-                    ADD TO CART — ₹{product.price}
+                    {isOutOfStock ? "OUT OF STOCK" : `ADD TO CART — ₹${price}`}
                   </button>
                 )}
 
                 <button
                   type="button"
-                  className="prod-secondary-btn"
                   onClick={() => navigate("/cart")}
+                  style={{
+                    padding: "11px 18px",
+                    borderRadius: "10px",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    color: "#0f172a",
+                    fontWeight: 700,
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
                 >
-                  Go to Cart ({cartCount})
+                  Go to Cart ({cartBadgeCount})
                 </button>
               </div>
             </div>
@@ -229,3 +599,5 @@ export default function ProductDetails() {
     </div>
   );
 }
+
+export default ProductDetails;
