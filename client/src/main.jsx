@@ -7,6 +7,7 @@ import App from "./App.jsx";
 import Cart from "./cart.jsx";
 import Admin from "./admin.jsx";
 import CustomerLogin from "./pages/CustomerLogin.jsx";
+import ProductDetails from "./pages/ProductDetails.jsx";
 import "./index.css";
 
 function ProtectedRoute({ children }) {
@@ -25,6 +26,14 @@ createRoot(document.getElementById("root")).render(
               element={
                 <ProtectedRoute>
                   <App />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/product/:id"
+              element={
+                <ProtectedRoute>
+                  <ProductDetails />
                 </ProtectedRoute>
               }
             />

@@ -321,11 +321,16 @@ function App() {
 
             {filteredProducts.map((product) => {
               const cartItem = getCartItem(product.id);
+              const openDetails = () => navigate(`/product/${product.id}`);
 
               return (
                 <article className="product-card" key={product.id}>
 
-                  <div className="product-image">
+                  <div
+                    className="product-image"
+                    onClick={openDetails}
+                    style={{ cursor: "pointer" }}
+                  >
 
                     {product.badge && (
                       <span className="product-badge">
@@ -343,19 +348,28 @@ function App() {
 
                   <div className="product-details">
 
-                    <span className="product-category">
-                      {product.category}
-                    </span>
+                    <div
+                      onClick={openDetails}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <span className="product-category">
+                        {product.category}
+                      </span>
 
-                    <h3>{product.name}</h3>
+                      <h3>{product.name}</h3>
 
-                    <p className="product-size">
-                      {product.size}
-                    </p>
+                      <p className="product-size">
+                        {product.size}
+                      </p>
+                    </div>
 
                     <div className="product-bottom">
 
-                      <div className="product-price">
+                      <div
+                        className="product-price"
+                        onClick={openDetails}
+                        style={{ cursor: "pointer" }}
+                      >
                         <strong>₹{product.price}</strong>
                       </div>
 
