@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import "./admin.css";
+import { useAuth } from "./authcontext.jsx";
 
 import ProductManagement from "./pages/productmanagement";
 import InventoryManagement from "./pages/inventorymanagement";
@@ -8,8 +9,12 @@ import OrderManagement from "./pages/ordermanagement";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const API_URL = `${API_BASE}/api/auth`;
 const STATS_URL = `${API_BASE}/api/orders/stats`;
+const ADMIN_TOKEN_KEY = "freshmart-admin-token";
+const ADMIN_LAST_ACTIVE_KEY = "freshmart-admin-last-active";
+const ADMIN_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 function Admin() {
+  const { logoutAdmin } = useAuth();
   const [activePage, setActivePage] = useState("dashboard");
 
   const [stats, setStats] = useState({
@@ -32,12 +37,33 @@ function Admin() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
 
-  // Verify saved admin token when the page loads
+  const clearAdminSessionState = (message = "") => {
+    logoutAdmin();
+    setToken("");
+    setUser(null);
+    setEmail("");
+    setPassword("");
+    setActivePage("dashboard");
+    setStatsError("");
+    if (message) {
+      setLoginError(message);
+    }
+  };
+
+  // Verify saved admin token and idle timeout when the page loads
   useEffect(() => {
     const verifyAdmin = async () => {
-      const savedToken = localStorage.getItem("freshmart-admin-token");
+      const savedToken = localStorage.getItem(ADMIN_TOKEN_KEY);
 
       if (!savedToken) {
+        setCheckingAuth(false);
+        return;
+      }
+
+      const lastActive = Number(localStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || 0);
+      if (lastActive && Date.now() - lastActive > ADMIN_IDLE_TIMEOUT_MS) {
+        logoutAdmin();
+        setLoginError("Session expired due to inactivity. Please sign in again.");
         setCheckingAuth(false);
         return;
       }
@@ -55,10 +81,11 @@ function Admin() {
           throw new Error("Admin session is invalid.");
         }
 
+        localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(Date.now()));
         setToken(savedToken);
         setUser(data.user);
       } catch (error) {
-        localStorage.removeItem("freshmart-admin-token");
+        logoutAdmin();
         setToken("");
         setUser(null);
       } finally {
@@ -67,7 +94,42 @@ function Admin() {
     };
 
     verifyAdmin();
-  }, []);
+  }, [logoutAdmin]);
+
+  // Keep admin session alive on activity and expire after 30 minutes of inactivity
+  useEffect(() => {
+    if (!token || !user) return;
+
+    const handleActivity = () => {
+      const now = Date.now();
+      const lastActive = Number(localStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || now);
+
+      if (now - lastActive > ADMIN_IDLE_TIMEOUT_MS) {
+        clearAdminSessionState(
+          "Session expired due to 30 minutes of inactivity. Please sign in again."
+        );
+        return;
+      }
+
+      localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
+    };
+
+    localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(Date.now()));
+
+    const events = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
+    events.forEach((eventName) =>
+      window.addEventListener(eventName, handleActivity, { passive: true })
+    );
+
+    const intervalId = window.setInterval(handleActivity, 60 * 1000);
+
+    return () => {
+      events.forEach((eventName) =>
+        window.removeEventListener(eventName, handleActivity)
+      );
+      window.clearInterval(intervalId);
+    };
+  }, [token, user, logoutAdmin]);
 
   // Admin login
   const handleLogin = async (event) => {
@@ -104,7 +166,8 @@ function Admin() {
         throw new Error("The server did not return an authentication token.");
       }
 
-      localStorage.setItem("freshmart-admin-token", data.token);
+      localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+      localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(Date.now()));
 
       setToken(data.token);
       setUser(data.user);
@@ -119,14 +182,8 @@ function Admin() {
 
   // Admin logout
   const handleLogout = () => {
-    localStorage.removeItem("freshmart-admin-token");
-    setToken("");
-    setUser(null);
-    setEmail("");
-    setPassword("");
-    setActivePage("dashboard");
+    clearAdminSessionState("");
     setLoginError("");
-    setStatsError("");
   };
 
   // Fetch all dashboard statistics
