@@ -1,18 +1,34 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./authcontext.jsx";
 import { CartProvider } from "./cartcontext.jsx";
 import App from "./App.jsx";
-import Cart from "./cart.jsx";
-import Admin from "./admin.jsx";
 import CustomerLogin from "./pages/CustomerLogin.jsx";
 import ProductDetails from "./pages/ProductDetails.jsx";
+import Admin from "./admin.jsx";
 import "./index.css";
 
-function ProtectedRoute({ children }) {
+function ProtectedCustomerRoute({ children }) {
   const { isAuthenticated } = useAuth();
-  return isAuthenticated ? children : <CustomerLogin />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
+function CartRoute() {
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  return (
+    <div style={{ padding: "32px", maxWidth: "900px", margin: "0 auto" }}>
+      <h2>Your FreshMart Cart</h2>
+      <p>Continue shopping or return to the storefront to manage your items.</p>
+      <a href="/">← Back to Store</a>
+    </div>
+  );
 }
 
 createRoot(document.getElementById("root")).render(
@@ -24,29 +40,17 @@ createRoot(document.getElementById("root")).render(
             <Route
               path="/"
               element={
-                <ProtectedRoute>
+                <ProtectedCustomerRoute>
                   <App />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/product/:id"
-              element={
-                <ProtectedRoute>
-                  <ProductDetails />
-                </ProtectedRoute>
+                </ProtectedCustomerRoute>
               }
             />
             <Route path="/login" element={<CustomerLogin />} />
-            <Route
-              path="/cart"
-              element={
-                <ProtectedRoute>
-                  <Cart />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/cart" element={<CartRoute />} />
+            <Route path="/product/:id" element={<ProductDetails />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/admin/*" element={<Admin />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </CartProvider>

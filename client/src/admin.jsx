@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import "./admin.css";
 import { useAuth } from "./authcontext.jsx";
 
 import ProductManagement from "./pages/productmanagement";
 import InventoryManagement from "./pages/inventorymanagement";
 import OrderManagement from "./pages/ordermanagement";
+import CustomerManagement from "./pages/customermanagement";
+import SalesReports from "./pages/salesreports";
+import Settings from "./pages/settings";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const API_URL = `${API_BASE}/api/auth`;
@@ -13,9 +17,36 @@ const ADMIN_TOKEN_KEY = "freshmart-admin-token";
 const ADMIN_LAST_ACTIVE_KEY = "freshmart-admin-last-active";
 const ADMIN_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
+const VALID_PAGES = [
+  "dashboard",
+  "products",
+  "orders",
+  "inventory",
+  "customers",
+  "sales",
+  "settings",
+];
+
+function pageFromPathname(pathname) {
+  const clean = pathname.replace(/\/+$/, "");
+  if (clean === "/admin" || clean === "/admin/dashboard") {
+    return "dashboard";
+  }
+  const match = clean.match(/^\/admin\/([^/]+)/);
+  if (match && VALID_PAGES.includes(match[1])) {
+    return match[1];
+  }
+  return "dashboard";
+}
+
 function Admin() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { logoutAdmin } = useAuth();
-  const [activePage, setActivePage] = useState("dashboard");
+
+  const [activePage, setActivePage] = useState(() =>
+    pageFromPathname(location.pathname)
+  );
 
   const [stats, setStats] = useState({
     totalProducts: 0,
@@ -37,18 +68,33 @@ function Admin() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
 
-  const clearAdminSessionState = (message = "") => {
-    logoutAdmin();
-    setToken("");
-    setUser(null);
-    setEmail("");
-    setPassword("");
-    setActivePage("dashboard");
-    setStatsError("");
-    if (message) {
-      setLoginError(message);
+  // Keep activePage synchronized with URL sub-paths like /admin/orders or /admin/sales
+  useEffect(() => {
+    const nextPage = pageFromPathname(location.pathname);
+    setActivePage(nextPage);
+    if (location.pathname === "/admin/dashboard") {
+      navigate("/admin", { replace: true });
     }
-  };
+  }, [location.pathname, navigate]);
+
+  const clearAdminSessionState = useCallback(
+    (message = "") => {
+      logoutAdmin();
+      setToken("");
+      setUser(null);
+      setEmail("");
+      setPassword("");
+      setActivePage("dashboard");
+      setStatsError("");
+      if (message) {
+        setLoginError(message);
+      }
+      if (location.pathname !== "/admin") {
+        navigate("/admin", { replace: true });
+      }
+    },
+    [logoutAdmin, location.pathname, navigate]
+  );
 
   // Verify saved admin token and idle timeout when the page loads
   useEffect(() => {
@@ -129,7 +175,7 @@ function Admin() {
       );
       window.clearInterval(intervalId);
     };
-  }, [token, user, logoutAdmin]);
+  }, [token, user, clearAdminSessionState]);
 
   // Admin login
   const handleLogin = async (event) => {
@@ -169,10 +215,14 @@ function Admin() {
       localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
       localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(Date.now()));
 
+      const targetPage = pageFromPathname(location.pathname);
       setToken(data.token);
       setUser(data.user);
       setPassword("");
-      setActivePage("dashboard");
+      setActivePage(targetPage);
+      navigate(targetPage === "dashboard" ? "/admin" : `/admin/${targetPage}`, {
+        replace: true,
+      });
     } catch (error) {
       setLoginError(error.message || "Unable to log in. Please try again.");
     } finally {
@@ -227,7 +277,9 @@ function Admin() {
   }, [token, activePage]);
 
   const showPage = (page) => {
-    setActivePage(page);
+    const resolved = VALID_PAGES.includes(page) ? page : "dashboard";
+    setActivePage(resolved);
+    navigate(resolved === "dashboard" ? "/admin" : `/admin/${resolved}`);
   };
 
   const getPageTitle = () => {
@@ -350,6 +402,7 @@ function Admin() {
 
         <nav className="admin-nav">
           <button
+            type="button"
             className={activePage === "dashboard" ? "active" : ""}
             onClick={() => showPage("dashboard")}
           >
@@ -357,6 +410,7 @@ function Admin() {
           </button>
 
           <button
+            type="button"
             className={activePage === "products" ? "active" : ""}
             onClick={() => showPage("products")}
           >
@@ -364,6 +418,7 @@ function Admin() {
           </button>
 
           <button
+            type="button"
             className={activePage === "orders" ? "active" : ""}
             onClick={() => showPage("orders")}
           >
@@ -371,6 +426,7 @@ function Admin() {
           </button>
 
           <button
+            type="button"
             className={activePage === "inventory" ? "active" : ""}
             onClick={() => showPage("inventory")}
           >
@@ -378,6 +434,7 @@ function Admin() {
           </button>
 
           <button
+            type="button"
             className={activePage === "customers" ? "active" : ""}
             onClick={() => showPage("customers")}
           >
@@ -389,6 +446,7 @@ function Admin() {
 
         <nav className="admin-nav">
           <button
+            type="button"
             className={activePage === "sales" ? "active" : ""}
             onClick={() => showPage("sales")}
           >
@@ -396,13 +454,14 @@ function Admin() {
           </button>
 
           <button
+            type="button"
             className={activePage === "settings" ? "active" : ""}
             onClick={() => showPage("settings")}
           >
             ⚙️ Settings
           </button>
 
-          <button onClick={handleLogout}>
+          <button type="button" onClick={handleLogout}>
             🚪 Logout
           </button>
         </nav>
@@ -475,13 +534,13 @@ function Admin() {
               <div className="admin-panel">
                 <h2>Quick Actions</h2>
                 <div className="admin-shortcuts">
-                  <button onClick={() => showPage("products")}>
+                  <button type="button" onClick={() => showPage("products")}>
                     + Add Product
                   </button>
-                  <button onClick={() => showPage("products")}>
+                  <button type="button" onClick={() => showPage("products")}>
                     View Products
                   </button>
-                  <button onClick={() => showPage("orders")}>
+                  <button type="button" onClick={() => showPage("orders")}>
                     Manage Orders
                   </button>
                 </div>
@@ -495,18 +554,11 @@ function Admin() {
           )}
 
           {activePage === "products" && <ProductManagement />}
-          {activePage === "inventory" && <InventoryManagement />}
           {activePage === "orders" && <OrderManagement />}
-
-          {activePage !== "dashboard" &&
-            activePage !== "products" &&
-            activePage !== "inventory" &&
-            activePage !== "orders" && (
-              <div className="admin-panel">
-                <h2>{getPageTitle()}</h2>
-                <p>This section will be developed in a later step.</p>
-              </div>
-            )}
+          {activePage === "inventory" && <InventoryManagement />}
+          {activePage === "customers" && <CustomerManagement />}
+          {activePage === "sales" && <SalesReports />}
+          {activePage === "settings" && <Settings />}
         </section>
       </main>
     </div>
