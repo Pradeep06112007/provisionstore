@@ -49,6 +49,7 @@ function Admin() {
   const [activePage, setActivePage] = useState(() =>
     pageFromPathname(location.pathname)
   );
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   const [stats, setStats] = useState({
     totalProducts: 0,
@@ -70,10 +71,35 @@ function Admin() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
 
+  // Close profile dropdown on outside click or Escape
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+
+    const handleDocClick = (event) => {
+      if (!event.target.closest(".admin-profile-wrapper")) {
+        setProfileMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("click", handleDocClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("click", handleDocClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [profileMenuOpen]);
+
   // Keep activePage synchronized with URL sub-paths like /admin/orders or /admin/stock-tracker
   useEffect(() => {
     const nextPage = pageFromPathname(location.pathname);
     setActivePage(nextPage);
+    setProfileMenuOpen(false);
     if (location.pathname === "/admin/dashboard") {
       navigate("/admin", { replace: true });
     }
@@ -87,6 +113,7 @@ function Admin() {
       setEmail("");
       setPassword("");
       setActivePage("dashboard");
+      setProfileMenuOpen(false);
       setStatsError("");
       if (message) {
         setLoginError(message);
@@ -281,6 +308,7 @@ function Admin() {
   const showPage = (page) => {
     const resolved = VALID_PAGES.includes(page) ? page : "dashboard";
     setActivePage(resolved);
+    setProfileMenuOpen(false);
     navigate(resolved === "dashboard" ? "/admin" : `/admin/${resolved}`);
   };
 
@@ -471,10 +499,6 @@ function Admin() {
           >
             ⚙️ Settings
           </button>
-
-          <button type="button" onClick={handleLogout}>
-            🚪 Logout
-          </button>
         </nav>
       </aside>
 
@@ -482,11 +506,70 @@ function Admin() {
         <header className="admin-topbar">
           <h3>{getPageTitle()}</h3>
 
-          <div className="admin-profile">
-            <div className="admin-avatar">
-              {user.name?.charAt(0).toUpperCase() || "A"}
-            </div>
-            <strong>{user.name || "Administrator"}</strong>
+          <div
+            className="admin-profile-wrapper"
+            style={{ position: "relative" }}
+          >
+            <button
+              type="button"
+              className="admin-profile"
+              onClick={() => setProfileMenuOpen((prev) => !prev)}
+              aria-expanded={profileMenuOpen}
+              aria-haspopup="menu"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                padding: "4px 8px",
+                borderRadius: "8px",
+              }}
+            >
+              <div className="admin-avatar">
+                {user.name?.charAt(0).toUpperCase() || "A"}
+              </div>
+              <strong>{user.name || "FreshMart Admin"}</strong>
+            </button>
+
+            {profileMenuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "calc(100% + 6px)",
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  boxShadow: "0 10px 25px rgba(15, 23, 42, 0.12)",
+                  minWidth: "160px",
+                  padding: "6px",
+                  zIndex: 50,
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleLogout}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "8px 12px",
+                    borderRadius: "7px",
+                    border: "none",
+                    background: "transparent",
+                    color: "#b91c1c",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  🚪 Logout
+                </button>
+              </div>
+            )}
           </div>
         </header>
 

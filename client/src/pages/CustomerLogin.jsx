@@ -1,261 +1,224 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../authcontext.jsx";
-import "./CustomerLogin.css";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const AUTH_URL = `${API_BASE}/api/auth`;
 
-export default function CustomerLogin() {
+function CustomerLogin() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { loginCustomer } = useAuth();
 
-  const [mode, setMode] = useState("login"); // "login" | "register"
-  const [name, setName] = useState("");
+  const qrSession = searchParams.get("qr") || "";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
-
-  const switchMode = (nextMode) => {
-    setMode(nextMode);
-    setError("");
-    setSuccessMsg("");
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    setSuccessMsg("");
-
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !password) {
-      setError("Please enter your email address and password.");
-      return;
-    }
-
-    if (mode === "register") {
-      if (name.trim().length < 2) {
-        setError("Please enter your full name.");
-        return;
-      }
-      if (password.length < 8) {
-        setError("Password must contain at least 8 characters.");
-        return;
-      }
-    }
+    setLoading(true);
 
     try {
-      setLoading(true);
-
-      const endpoint =
-        mode === "login" ? `${AUTH_URL}/login` : `${AUTH_URL}/register`;
-      const payload =
-        mode === "login"
-          ? { email: cleanEmail, password }
-          : {
-              name: name.trim(),
-              email: cleanEmail,
-              password,
-            };
-
-      const response = await fetch(endpoint, {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          ...(qrSession ? { qrSession } : {}),
+        }),
       });
 
-      const data = await response.json();
+      const data = await res.json();
 
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.message ||
-            (mode === "login"
-              ? "Invalid email or password."
-              : "Could not create your account.")
-        );
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Invalid email or password.");
       }
 
-      loginCustomer(data.token, data.user);
+      if (typeof loginCustomer === "function") {
+        loginCustomer(data.user, data.token);
+      } else if (data.token) {
+        localStorage.setItem("freshmart-customer-token", data.token);
+      }
 
-      setSuccessMsg(
-        mode === "login"
-          ? "Welcome back! Opening FreshMart..."
-          : "Account created successfully! Opening FreshMart..."
-      );
-
-      setTimeout(() => {
-        navigate("/", { replace: true });
-      }, 400);
+      navigate("/", { replace: true });
     } catch (err) {
-      setError(err.message || "Something went wrong. Please try again.");
+      setError(err.message || "Unable to sign in. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="cust-auth-page">
-      <section className="cust-auth-brand">
-        <div className="cust-brand-top">
-          <div className="cust-brand-logo">
-            <span>🛒</span>
-            <div>
-              Fresh<span className="accent">Mart</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="cust-brand-hero">
-          <span className="cust-brand-pill">CUSTOMER LOGIN</span>
-          <h1>Daily essentials, delivered fresh to your door.</h1>
-          <p>
-            Sign in to shop faster, keep track of your groceries, and enjoy a
-            smooth Cash on Delivery checkout experience.
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        background: "#f8fafc",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "420px",
+          background: "#ffffff",
+          border: "1px solid #e2e8f0",
+          borderRadius: "16px",
+          padding: "28px",
+          boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <div style={{ fontSize: "2rem", marginBottom: "6px" }}>🛒</div>
+          <h1 style={{ margin: 0, fontSize: "1.5rem", color: "#0f172a" }}>
+            Fresh<span style={{ color: "#166534" }}>Mart</span>
+          </h1>
+          <p style={{ margin: "6px 0 0", color: "#475569", fontSize: "0.92rem" }}>
+            Sign in to your customer account
           </p>
-
-          <ul className="cust-perks">
-            <li>✓ Fresh rice, dals, oil, dairy &amp; produce</li>
-            <li>✓ Simple cart &amp; Cash on Delivery checkout</li>
-            <li>✓ Instant access to everyday household staples</li>
-          </ul>
         </div>
 
-        <div className="cust-brand-footer">
-          © {new Date().getFullYear()} FreshMart Grocery Store
-        </div>
-      </section>
+        {qrSession && (
+          <div
+            style={{
+              padding: "10px 12px",
+              borderRadius: "8px",
+              background: "#f0fdf4",
+              border: "1px solid #bbf7d0",
+              color: "#166534",
+              fontSize: "0.84rem",
+              marginBottom: "14px",
+            }}
+          >
+            QR Session detected: <strong>{qrSession}</strong>. Sign in below to continue.
+          </div>
+        )}
 
-      <section className="cust-auth-form-panel">
-        <div className="cust-auth-card">
-          <div className="cust-mode-tabs" role="tablist" aria-label="Account mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === "login"}
-              className={`cust-mode-tab ${mode === "login" ? "active" : ""}`}
-              onClick={() => switchMode("login")}
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+        >
+          <div>
+            <label
+              htmlFor="customer-email"
+              style={{ display: "block", fontWeight: 600, marginBottom: "5px", fontSize: "0.9rem" }}
             >
-              Sign In
-            </button>
-
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === "register"}
-              className={`cust-mode-tab ${mode === "register" ? "active" : ""}`}
-              onClick={() => switchMode("register")}
-            >
-              Create Account
-            </button>
+              Email address
+            </label>
+            <input
+              id="customer-email"
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+              required
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "1px solid #cbd5e1",
+                boxSizing: "border-box",
+              }}
+            />
           </div>
 
-          <div className="cust-auth-header">
-            <h2>
-              {mode === "login" ? "CUSTOMER LOGIN" : "CREATE CUSTOMER ACCOUNT"}
-            </h2>
-            <p>
-              {mode === "login"
-                ? "Enter your credentials to access your FreshMart account."
-                : "Sign up in seconds to start shopping with FreshMart."}
-            </p>
-          </div>
-
-          <form className="cust-auth-form" onSubmit={handleSubmit}>
-            {mode === "register" && (
-              <div className="cust-field">
-                <label htmlFor="cust-name">Full Name</label>
-                <input
-                  id="cust-name"
-                  type="text"
-                  placeholder="Enter your full name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                  required
-                />
-              </div>
-            )}
-
-            <div className="cust-field">
-              <label htmlFor="cust-email">Email Address</label>
+          <div>
+            <label
+              htmlFor="customer-password"
+              style={{ display: "block", fontWeight: 600, marginBottom: "5px", fontSize: "0.9rem" }}
+            >
+              Password
+            </label>
+            <div style={{ display: "flex", gap: "8px" }}>
               <input
-                id="cust-email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
+                id="customer-password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 required
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                }}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                style={{
+                  padding: "0 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  background: "#f8fafc",
+                  color: "#334155",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
             </div>
-
-            <div className="cust-field">
-              <label htmlFor="cust-password">Password</label>
-              <div className="cust-password-box">
-                <input
-                  id="cust-password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder={
-                    mode === "login"
-                      ? "Enter your password"
-                      : "At least 8 characters"
-                  }
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete={
-                    mode === "login" ? "current-password" : "new-password"
-                  }
-                  required
-                />
-                <button
-                  type="button"
-                  className="cust-toggle-pass"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="cust-auth-error" role="alert">
-                {error}
-              </div>
-            )}
-
-            {successMsg && (
-              <div className="cust-auth-success" role="status">
-                {successMsg}
-              </div>
-            )}
-
-            <button type="submit" className="cust-submit-btn" disabled={loading}>
-              {loading
-                ? mode === "login"
-                  ? "Signing in..."
-                  : "Creating account..."
-                : mode === "login"
-                  ? "Sign In"
-                  : "Create Account"}
-            </button>
-          </form>
-
-          <div className="cust-auth-divider">
-            <span>Store staff or manager?</span>
-            <button
-              type="button"
-              className="cust-admin-link"
-              onClick={() => navigate("/admin")}
-            >
-              Admin Portal →
-            </button>
           </div>
+
+          {error && (
+            <div className="admin-login-error" role="alert">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              marginTop: "4px",
+              padding: "11px 16px",
+              borderRadius: "8px",
+              border: "none",
+              background: "#166534",
+              color: "#ffffff",
+              fontWeight: 600,
+              fontSize: "0.95rem",
+              cursor: "pointer",
+            }}
+          >
+            {loading ? "Signing in..." : "Sign In"}
+          </button>
+        </form>
+
+        <div
+          style={{
+            marginTop: "16px",
+            paddingTop: "14px",
+            borderTop: "1px solid #e2e8f0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            fontSize: "0.88rem",
+          }}
+        >
+          <Link to="/qr-login" style={{ color: "#166534", fontWeight: 600 }}>
+            📱 Login with QR Code
+          </Link>
+          <Link to="/" style={{ color: "#334155", fontWeight: 600 }}>
+            Back to Store →
+          </Link>
         </div>
-      </section>
+      </div>
     </div>
   );
 }
+
+export default CustomerLogin;
