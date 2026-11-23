@@ -5,7 +5,6 @@ import { AuthProvider, useAuth } from "./authcontext.jsx";
 import { CartProvider } from "./cartcontext.jsx";
 import App from "./App.jsx";
 import CustomerLogin from "./pages/CustomerLogin.jsx";
-import CustomerQrLogin from "./pages/CustomerQrLogin.jsx";
 import ProductDetails from "./pages/ProductDetails.jsx";
 import Admin from "./admin.jsx";
 import "./index.css";
@@ -47,7 +46,6 @@ createRoot(document.getElementById("root")).render(
               }
             />
             <Route path="/login" element={<CustomerLogin />} />
-            <Route path="/qr-login" element={<CustomerQrLogin />} />
             <Route path="/cart" element={<CartRoute />} />
             <Route path="/product/:id" element={<ProductDetails />} />
             <Route path="/admin" element={<Admin />} />
