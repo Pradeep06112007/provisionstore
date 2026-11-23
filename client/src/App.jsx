@@ -17,8 +17,15 @@ const CATEGORIES = [
   "Household",
 ];
 
-function getItemKey(item, fallbackIdx = 0) {
-  return String(item?._id || item?.id || item?.name || fallbackIdx);
+function getProductId(item, fallbackIdx = 0) {
+  return String(
+    item?._id ||
+      item?.id ||
+      item?.productId ||
+      item?.name ||
+      item?.title ||
+      fallbackIdx
+  );
 }
 
 function createCustomerQrCode() {
@@ -341,14 +348,25 @@ function App() {
       }
     })();
 
-  const persistLocalCart = useCallback((nextItems) => {
-    setLocalCartItems(nextItems);
+  const syncLocalCartFromStorage = useCallback(() => {
     try {
-      localStorage.setItem("freshmart-cart", JSON.stringify(nextItems));
+      const parsed = JSON.parse(localStorage.getItem("freshmart-cart") || "[]");
+      setLocalCartItems(Array.isArray(parsed) ? parsed : []);
     } catch {
-      // ignore storage errors
+      setLocalCartItems([]);
     }
   }, []);
+
+  useEffect(() => {
+    syncLocalCartFromStorage();
+    const onStorage = (e) => {
+      if (!e.key || e.key === "freshmart-cart") {
+        syncLocalCartFromStorage();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [syncLocalCartFromStorage]);
 
   useEffect(() => {
     let active = true;
@@ -402,11 +420,13 @@ function App() {
   const activeCartList = useMemo(() => {
     if (Array.isArray(cartCtx?.cart)) return cartCtx.cart;
     if (Array.isArray(cartCtx?.items)) return cartCtx.items;
+    if (Array.isArray(cartCtx?.cartItems)) return cartCtx.cartItems;
     return localCartItems;
   }, [cartCtx, localCartItems]);
 
   const cartBadgeCount = useMemo(() => {
     if (typeof cartCtx?.cartCount === "number") return cartCtx.cartCount;
+    if (typeof cartCtx?.totalItems === "number") return cartCtx.totalItems;
     return activeCartList.reduce(
       (sum, item) => sum + (Number(item.qty || item.quantity) || 1),
       0
@@ -415,60 +435,80 @@ function App() {
 
   const getProductQty = useCallback(
     (item, idx = 0) => {
-      const targetKey = getItemKey(item, idx);
+      const targetId = getProductId(item, idx);
       const found = activeCartList.find(
-        (c, cIdx) => getItemKey(c, cIdx) === targetKey
+        (c, cIdx) => getProductId(c, cIdx) === targetId
       );
       return found ? Number(found.qty || found.quantity) || 1 : 0;
     },
     [activeCartList]
   );
 
-  const handleHeaderSearchSubmit = (e) => {
-    e.preventDefault();
-    const trimmed = searchText.trim();
-    navigate(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
-  };
+  const updateLocalItemQty = useCallback(
+    (item, idx, delta) => {
+      const targetId = getProductId(item, idx);
+      const next = [...localCartItems];
+      const foundIdx = next.findIndex((c, cIdx) => getProductId(c, cIdx) === targetId);
+      if (foundIdx >= 0) {
+        const currentQty = Number(next[foundIdx].qty || next[foundIdx].quantity) || 1;
+        const updatedQty = currentQty + delta;
+        if (updatedQty <= 0) {
+          next.splice(foundIdx, 1);
+        } else {
+          next[foundIdx] = { ...next[foundIdx], qty: updatedQty };
+        }
+      } else if (delta > 0) {
+        next.push({ ...item, _id: item._id || item.id || targetId, qty: delta });
+      }
+      setLocalCartItems(next);
+      try {
+        localStorage.setItem("freshmart-cart", JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+    },
+    [localCartItems]
+  );
 
   const handleAddToCart = (item, idx = 0) => {
     if (cartCtx && typeof cartCtx.addToCart === "function") {
       cartCtx.addToCart(item);
       return;
     }
-    const targetKey = getItemKey(item, idx);
-    const next = [...localCartItems];
-    const existingIdx = next.findIndex((c, cIdx) => getItemKey(c, cIdx) === targetKey);
-    if (existingIdx >= 0) {
-      const prevQty = Number(next[existingIdx].qty || next[existingIdx].quantity) || 1;
-      next[existingIdx] = { ...next[existingIdx], qty: prevQty + 1 };
-    } else {
-      next.push({ ...item, qty: 1 });
+    if (cartCtx && typeof cartCtx.incrementQty === "function") {
+      cartCtx.incrementQty(getProductId(item, idx));
+      return;
     }
-    persistLocalCart(next);
+    updateLocalItemQty(item, idx, 1);
   };
 
   const handleDecreaseQty = (item, idx = 0) => {
-    const targetKey = getItemKey(item, idx);
+    const id = getProductId(item, idx);
+    const currentQty = getProductQty(item, idx);
+
     if (cartCtx && typeof cartCtx.decreaseQty === "function") {
-      cartCtx.decreaseQty(item);
+      cartCtx.decreaseQty(id);
+      return;
+    }
+    if (cartCtx && typeof cartCtx.decrementQty === "function") {
+      cartCtx.decrementQty(id);
       return;
     }
     if (cartCtx && typeof cartCtx.updateQuantity === "function") {
-      const currentQty = getProductQty(item, idx);
-      cartCtx.updateQuantity(item, currentQty - 1);
+      cartCtx.updateQuantity(id, currentQty - 1);
       return;
     }
-    const next = [...localCartItems];
-    const existingIdx = next.findIndex((c, cIdx) => getItemKey(c, cIdx) === targetKey);
-    if (existingIdx >= 0) {
-      const prevQty = Number(next[existingIdx].qty || next[existingIdx].quantity) || 1;
-      if (prevQty <= 1) {
-        next.splice(existingIdx, 1);
-      } else {
-        next[existingIdx] = { ...next[existingIdx], qty: prevQty - 1 };
-      }
-      persistLocalCart(next);
+    if (cartCtx && typeof cartCtx.updateQty === "function") {
+      cartCtx.updateQty(id, currentQty - 1);
+      return;
     }
+    updateLocalItemQty(item, idx, -1);
+  };
+
+  const handleHeaderSearchSubmit = (e) => {
+    e.preventDefault();
+    const trimmed = searchText.trim();
+    navigate(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
   };
 
   const handleLogout = () => {
@@ -762,7 +802,7 @@ function App() {
               }}
             >
               {filteredByCategory.map((item, idx) => {
-                const id = getItemKey(item, idx);
+                const id = getProductId(item, idx);
                 const title = item.name || item.title || "Grocery Item";
                 const price = Number(item.price || 0);
                 const imageSrc = item.image || item.imageUrl || "";
