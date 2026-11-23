@@ -636,3 +636,26 @@
     font-size: 24px;
   }
 }
+@media (max-width: 768px) {
+  .admin-sidebar.open .admin-nav {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+    width: 100% !important;
+  }
+
+  .admin-sidebar.open .admin-nav button {
+    width: 100% !important;
+    justify-content: flex-start !important;
+    text-align: left !important;
+    flex: none !important;
+  }
+
+  .admin-sidebar.open .admin-nav-title {
+    display: block !important;
+    width: 100% !important;
+    margin-top: 12px !important;
+  }
+}
